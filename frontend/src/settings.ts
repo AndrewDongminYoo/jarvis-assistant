@@ -10,7 +10,46 @@ export function initSettings(): void {
   h2.textContent = "Settings";
   panel.appendChild(h2);
 
-  // Form fields
+  const formWrap = document.createElement("div");
+  formWrap.style.cssText =
+    "display:flex;flex-direction:column;gap:12px;width:100%;max-width:400px;";
+
+  const languageGroup = document.createElement("div");
+  languageGroup.className = "settings-group";
+
+  const languageLabel = document.createElement("label");
+  languageLabel.className = "settings-label";
+  languageLabel.htmlFor = "s-recognition-lang";
+  languageLabel.textContent = "Speech Recognition Language";
+
+  const languageSelect = document.createElement("select");
+  languageSelect.id = "s-recognition-lang";
+  languageSelect.className = "settings-input";
+
+  const languageOptions = [
+    { value: "ko-KR", label: "Korean (ko-KR)" },
+    { value: "en-US", label: "English (en-US)" },
+    { value: "ja-JP", label: "Japanese (ja-JP)" },
+    { value: "zh-CN", label: "Chinese (zh-CN)" },
+  ];
+
+  languageOptions.forEach(({ value, label }) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    languageSelect.appendChild(option);
+  });
+
+  const savedLang = localStorage.getItem("jarvis_recognition_lang");
+  languageSelect.value = savedLang ?? "ko-KR";
+  languageSelect.addEventListener("change", () =>
+    localStorage.setItem("jarvis_recognition_lang", languageSelect.value),
+  );
+
+  languageGroup.appendChild(languageLabel);
+  languageGroup.appendChild(languageSelect);
+  formWrap.appendChild(languageGroup);
+
   const fields: {
     label: string;
     id: string;
@@ -36,10 +75,6 @@ export function initSettings(): void {
       placeholder: "https://localhost:8340",
     },
   ];
-
-  const formWrap = document.createElement("div");
-  formWrap.style.cssText =
-    "display:flex;flex-direction:column;gap:12px;width:100%;max-width:400px;";
 
   fields.forEach(({ label, id, key, placeholder }) => {
     const group = document.createElement("div");

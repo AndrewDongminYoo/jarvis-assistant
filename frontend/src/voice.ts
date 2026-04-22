@@ -27,6 +27,14 @@ const queue: AudioBuffer[] = [];
 let playing = false;
 let levelCb: LevelCb | null = null;
 let rafId: number | null = null;
+const RECOGNITION_LANG_KEY = "jarvis_recognition_lang";
+const DEFAULT_RECOGNITION_LANG = "ko-KR";
+const SUPPORTED_RECOGNITION_LANGS = new Set([
+  "ko-KR",
+  "en-US",
+  "ja-JP",
+  "zh-CN",
+]);
 
 export function onLevel(cb: LevelCb): void {
   levelCb = cb;
@@ -48,6 +56,13 @@ function stopLevel(): void {
     cancelAnimationFrame(rafId);
     rafId = null;
   }
+}
+
+function getRecognitionLang(): string {
+  const saved = localStorage.getItem(RECOGNITION_LANG_KEY) ?? "";
+  return SUPPORTED_RECOGNITION_LANGS.has(saved)
+    ? saved
+    : DEFAULT_RECOGNITION_LANG;
 }
 
 async function getCtx(): Promise<AudioContext> {
@@ -102,7 +117,7 @@ export function startListening(): void {
   recognition = new SR();
   recognition.continuous = false;
   recognition.interimResults = false;
-  recognition.lang = "en-US";
+  recognition.lang = getRecognitionLang();
   recognition.onresult = (e) => {
     const text = e.results[0][0].transcript.trim();
     if (text) {

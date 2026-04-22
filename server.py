@@ -50,6 +50,7 @@ def _build_system_prompt() -> str:
 Personality: Precise, dry wit, subtly sardonic, unwaveringly helpful. British vocabulary.
 Voice: Concise — max 2-3 sentences. No markdown. You are speaking aloud.
 Address the user as '{name}'.
+Respond in the user's language. Mix Korean and English naturally — like a bilingual speaker would. 사용자가 한국어로 말하면 한국어로, 영어면 영어로, 혼용하면 자연스럽게 혼용하여 답하세요.
 
 Embed ONE action tag per response when system access is needed:
   [ACTION:CALENDAR]                      — upcoming calendar events
@@ -80,7 +81,7 @@ async def _tts_elevenlabs(text: str) -> Optional[bytes]:
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     payload = {
         "text": text,
-        "model_id": "eleven_turbo_v2",
+        "model_id": "eleven_multilingual_v2",
         "voice_settings": {"stability": 0.5, "similarity_boost": 0.75},
     }
     headers = {
@@ -97,10 +98,15 @@ async def _tts_elevenlabs(text: str) -> Optional[bytes]:
             return None
 
 
+def _detect_lang(text: str) -> str:
+    return "ko" if any("가" <= char <= "힣" for char in text) else "en"
+
+
 def _tts_macos(text: str) -> None:
     import subprocess
 
-    subprocess.run(["say", "-v", "Daniel", text], timeout=60)
+    voice = "Yuna" if _detect_lang(text) == "ko" else "Daniel"
+    subprocess.run(["say", "-v", voice, text], timeout=60)
 
 
 async def synthesize(text: str) -> Optional[bytes]:
