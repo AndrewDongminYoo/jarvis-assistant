@@ -10,28 +10,28 @@ from pathlib import Path
 from typing import Optional
 
 import httpx
-from anthropic import AsyncAnthropic
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from llm_router import LLMRouter
+
 load_dotenv()
 log = logging.getLogger("jarvis")
 logging.basicConfig(level=logging.INFO)
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")  # George
 USER_NAME = (
     os.getenv("USER_NAME", "sir").split(",")[0].strip()
-)  # "Dongmin,Yu" → "Dongmin"
+)  # "Dongmin,Yu" -> "Dongmin"
 PORT = int(os.getenv("PORT", "8340"))
 SSL_CERT = Path("cert.pem")
 SSL_KEY = Path("key.pem")
 
-anthropic_client = AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+_router = LLMRouter.from_env()
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ async def dispatch_action(tag: str) -> str:
     if kind == "PLAN":
         from planner import get_clarifying_questions
 
-        return get_clarifying_questions(":".join(parts[1:]))
+        return await get_clarifying_questions(":".join(parts[1:]))
 
     if kind == "REMEMBER":
         from memory import Memory
@@ -230,22 +230,35 @@ from memory import Memory
 _mem = Memory()
 
 
+def _task_type(text: str) -> str:
+    lower = text.lower()
+    if any(
+        keyword in lower
+        for keyword in ("build", "code", "implement", "작성", "만들어", "구현")
+    ):
+        return "work"
+    if any(
+        keyword in lower for keyword in ("plan", "steps", "outline", "계획", "단계")
+    ):
+        return "plan"
+    return "voice"
+
+
 async def handle_message(ws: WebSocket, text: str) -> None:
     await ws.send_json({"type": "thinking"})
     messages = _mem.get_recent()
     messages.append({"role": "user", "content": text})
 
     try:
-        resp = await anthropic_client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=250,
-            system=_build_system_prompt(),
+        raw = await _router.complete(
+            task=_task_type(text),
             messages=messages,
+            system=_build_system_prompt(),
+            max_tokens=250,
         )
-        raw = resp.content[0].text  # type: ignore[union-attr]
     except Exception as e:
-        log.error("Claude error: %s", e)
-        await ws.send_json({"type": "error", "message": "Claude API error"})
+        log.error("LLM router error: %s", e)
+        await ws.send_json({"type": "error", "message": "LLM provider error"})
         return
 
     # Dispatch action tag if present
@@ -271,13 +284,12 @@ async def handle_message(ws: WebSocket, text: str) -> None:
             },
         ]
         try:
-            f = await anthropic_client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=150,
-                system=_build_system_prompt(),
+            spoken = await _router.complete(
+                task="narrate",
                 messages=follow_msgs,
+                system=_build_system_prompt(),
+                max_tokens=150,
             )
-            spoken = f.content[0].text  # type: ignore[union-attr]
         except Exception:
             spoken = action_result
 
