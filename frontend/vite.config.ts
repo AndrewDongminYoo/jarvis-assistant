@@ -5,7 +5,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      "/ws": {
+      "/ws/voice": {
         target: "https://localhost:8340",
         ws: true,
         secure: false,
