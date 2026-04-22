@@ -311,3 +311,10 @@ poetry.toml
 pyrightconfig.json
 
 # End of https://www.toptal.com/developers/gitignore/api/python,node
+
+### JARVIS ###
+*.pem
+data/*.jsonl
+data/active_session.json
+data/.jarvis_output.txt
+data/work_sessions/
