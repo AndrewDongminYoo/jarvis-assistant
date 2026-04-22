@@ -1,8 +1,26 @@
 // voice.ts — Web Speech API capture + Web Audio playback queue
 import { send } from "./ws.ts";
 
+// SpeechRecognition is not in TypeScript's standard DOM lib — define what we use
+interface SREvent {
+  readonly results: {
+    readonly 0: { readonly 0: { readonly transcript: string } };
+  };
+}
+interface SRInstance {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  onresult: ((e: SREvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+}
+type SRConstructor = new () => SRInstance;
+
 type LevelCb = (v: number) => void;
-let recognition: SpeechRecognition | null = null;
+let recognition: SRInstance | null = null;
 let ctx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
 const queue: AudioBuffer[] = [];
@@ -67,13 +85,13 @@ export async function enqueueAudio(b64: string): Promise<void> {
 }
 
 export function startListening(): void {
-  type AnyWindow = Record<string, unknown>;
+  type W = Record<string, unknown>;
   const SR =
-    ((window as unknown as AnyWindow)["SpeechRecognition"] as
-      | typeof SpeechRecognition
+    ((window as unknown as W)["SpeechRecognition"] as
+      | SRConstructor
       | undefined) ??
-    ((window as unknown as AnyWindow)["webkitSpeechRecognition"] as
-      | typeof SpeechRecognition
+    ((window as unknown as W)["webkitSpeechRecognition"] as
+      | SRConstructor
       | undefined);
 
   if (!SR) {
