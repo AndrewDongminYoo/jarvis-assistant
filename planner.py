@@ -1,9 +1,7 @@
 # planner.py — Conversational task planning with clarifying questions
-import os
+from llm_router import LLMRouter
 
-from anthropic import Anthropic
-
-_client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+_router = LLMRouter.from_env()
 
 SYSTEM = (
     "You are JARVIS's planning module. "
@@ -13,9 +11,9 @@ SYSTEM = (
 )
 
 
-def get_clarifying_questions(task: str) -> str:
-    resp = _client.messages.create(
-        model="claude-haiku-4-5-20251001",
+async def get_clarifying_questions(task: str) -> str:
+    return await _router.complete(
+        task="plan",
         max_tokens=300,
         system=SYSTEM,
         messages=[
@@ -25,12 +23,11 @@ def get_clarifying_questions(task: str) -> str:
             }
         ],
     )
-    return resp.content[0].text  # type: ignore[union-attr]
 
 
-def generate_plan(task: str, answers: str) -> str:
-    resp = _client.messages.create(
-        model="claude-haiku-4-5-20251001",
+async def generate_plan(task: str, answers: str) -> str:
+    return await _router.complete(
+        task="plan",
         max_tokens=500,
         system=SYSTEM,
         messages=[
@@ -42,4 +39,3 @@ def generate_plan(task: str, answers: str) -> str:
             },
         ],
     )
-    return resp.content[0].text  # type: ignore[union-attr]
