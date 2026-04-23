@@ -232,7 +232,7 @@ _dist = Path("frontend/dist")
 if _dist.exists():
     app.mount("/app", StaticFiles(directory=str(_dist), html=True), name="static")
 
-from memory import Memory
+from memory import Memory  # noqa: E402
 
 _mem = Memory()
 
