@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 import logging
 import os
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
@@ -203,10 +204,34 @@ class LLMRouter:
         errors: list[str] = []
 
         for provider in route:
+            model = getattr(provider, "model", "unknown")
+            started = time.perf_counter()
             try:
-                return await provider.complete(messages, system, max_tokens)
+                log.info(
+                    "LLM request task=%s provider=%s model=%s",
+                    task,
+                    provider.name,
+                    model,
+                )
+                response = await provider.complete(messages, system, max_tokens)
+                duration_ms = int((time.perf_counter() - started) * 1000)
+                log.info(
+                    "LLM response task=%s provider=%s model=%s duration_ms=%d chars=%d",
+                    task,
+                    provider.name,
+                    model,
+                    duration_ms,
+                    len(response),
+                )
+                return response
             except Exception as exc:
-                log.warning("Provider %s failed: %s", provider.name, exc)
+                log.warning(
+                    "LLM provider failed task=%s provider=%s model=%s error=%s",
+                    task,
+                    provider.name,
+                    model,
+                    exc,
+                )
                 errors.append(f"{provider.name}: {exc}")
 
         details = "; ".join(errors) if errors else "no configured providers"
