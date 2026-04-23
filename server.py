@@ -23,7 +23,8 @@ log = logging.getLogger("jarvis")
 logging.basicConfig(level=logging.INFO)
 
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "JBFqnCBsd6RMkjVDRZzb")  # George
+DEFAULT_ELEVENLABS_VOICE_ID = "UgBBYS2sOqTuMpoF3BR0"  # George
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", DEFAULT_ELEVENLABS_VOICE_ID)
 USER_NAME = (
     os.getenv("USER_NAME", "sir").split(",")[0].strip()
 )  # "Dongmin,Yu" -> "Dongmin"

@@ -8,8 +8,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 
 class FakeProvider:
-    def __init__(self, name, result=None, error=None):
+    def __init__(self, name, result=None, error=None, model="fake-model"):
         self.name = name
+        self.model = model
         self.result = result or f"{name}-result"
         self.error = error
         self.calls = []
@@ -162,3 +163,32 @@ def test_planner_uses_router_for_clarifying_questions(monkeypatch):
         run(planner.get_clarifying_questions("build routing")) == "router questions"
     )
     assert router.calls[0]["task"] == "plan"  # nosec B101
+
+
+def test_router_logs_provider_request_and_response(caplog):
+    import logging
+
+    from llm_router import LLMRouter
+
+    provider = FakeProvider("openai", result="short answer", model="gpt-test")
+    router = LLMRouter(
+        providers={"openai": provider},
+        route_names_by_task={"voice": ["openai"]},
+    )
+
+    with caplog.at_level(logging.INFO, logger="jarvis.llm_router"):
+        result = run(router.complete("voice", [], "sys", 10))
+
+    assert result == "short answer"  # nosec B101
+    logs = "\n".join(record.getMessage() for record in caplog.records)
+    assert "LLM request task=voice provider=openai model=gpt-test" in logs  # nosec B101
+    assert (
+        "LLM response task=voice provider=openai model=gpt-test" in logs
+    )  # nosec B101
+    assert "chars=12" in logs  # nosec B101
+
+
+def test_default_elevenlabs_voice_id_matches_jarvis_spec():
+    import server
+
+    assert server.DEFAULT_ELEVENLABS_VOICE_ID == "UgBBYS2sOqTuMpoF3BR0"  # nosec B101
