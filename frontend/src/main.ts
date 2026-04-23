@@ -7,42 +7,64 @@ import {
   startListening,
   stopListening,
 } from "./voice.ts";
+import { parseWakeCommand } from "./wake.ts";
+import { canStartWakeListening, type AppState } from "./session.ts";
 import { init as initOrb, setAudioLevel, setState } from "./orb.ts";
 import { initSettings } from "./settings.ts";
 
-type State = "idle" | "listening" | "thinking" | "speaking";
-
-let state: State = "idle";
+let state: AppState = "idle";
+let activated = false;
+let armed = false;
+let receivedAudio = false;
 const statusEl = document.getElementById("status")!;
 const transcriptEl = document.getElementById("transcript")!;
 const responseEl = document.getElementById("response")!;
 
-const STATUS_TEXT: Record<State, string> = {
-  idle: "Click to begin",
-  listening: "Listening…",
+const STATUS_TEXT: Record<AppState, string> = {
+  idle: 'Click once, then say "Jarvis"',
+  listening: 'Say "Jarvis"',
   thinking: "Thinking…",
   speaking: "Speaking…",
 };
 
-function transition(next: State): void {
+function transition(next: AppState, label?: string): void {
   state = next;
-  statusEl.textContent = STATUS_TEXT[next];
+  statusEl.textContent = label ?? STATUS_TEXT[next];
   statusEl.className = next === "idle" ? "" : next;
   setState(next);
 }
 
-function startSession(): void {
-  if (state !== "idle") return;
-  transition("listening");
+function startWakeListening(force = false): void {
+  if (!canStartWakeListening(state, activated, force)) return;
+  transition("listening", armed ? "Listening…" : STATUS_TEXT.listening);
   startListening();
 }
 
-on("connected", () => transition("idle"));
+function activateAssistant(): void {
+  if (activated) return;
+  activated = true;
+  armed = false;
+  responseEl.textContent = "";
+  startWakeListening();
+}
+
+function sendCommand(command: string): void {
+  armed = false;
+  stopListening();
+  transition("thinking");
+  send({ type: "transcript", text: command });
+}
+
+on("connected", () => {
+  if (activated) startWakeListening();
+  else transition("idle");
+});
 on("disconnected", () => {
   statusEl.textContent = "Reconnecting…";
   statusEl.className = "error";
 });
 on("thinking", () => {
+  receivedAudio = false;
   transition("thinking");
   stopListening();
 });
@@ -50,22 +72,38 @@ on("text", (m) => {
   responseEl.textContent = (m["content"] as string) ?? "";
 });
 on("audio", (m) => {
+  receivedAudio = true;
   void enqueueAudio(m["data"] as string);
   transition("speaking");
 });
-on("done", () => transition("idle"));
+on("done", () => {
+  if (!receivedAudio) startWakeListening(true);
+});
 on("error", (m) => {
   statusEl.textContent = `Error: ${m["message"] as string}`;
   statusEl.className = "error";
+  window.setTimeout(() => startWakeListening(true), 1200);
 });
 
 window.addEventListener("jarvis:transcript", (e) => {
-  transcriptEl.textContent = (e as CustomEvent<string>).detail;
+  const text = (e as CustomEvent<string>).detail;
+  transcriptEl.textContent = text;
+  const parsed = parseWakeCommand(text, armed);
+  if (parsed.kind === "ignore") return;
+  if (parsed.kind === "arm") {
+    armed = true;
+    transition("listening", "Listening…");
+    return;
+  }
+  transcriptEl.textContent = parsed.command;
+  sendCommand(parsed.command);
 });
 window.addEventListener("jarvis:recognition-end", () => {
-  if (state === "listening") send({ type: "abort" });
+  if (activated && state === "listening") {
+    window.setTimeout(startWakeListening, 250);
+  }
 });
-window.addEventListener("jarvis:speech-end", () => transition("idle"));
+window.addEventListener("jarvis:speech-end", () => startWakeListening(true));
 
 onLevel((v) => setAudioLevel(v));
 
@@ -81,6 +119,6 @@ window.addEventListener("DOMContentLoaded", async () => {
     if ((e.target as HTMLElement).closest("#settings-panel, #settings-btn"))
       return;
     await initAudio();
-    startSession();
+    activateAssistant();
   });
 });

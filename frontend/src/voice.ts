@@ -1,10 +1,14 @@
 // voice.ts — Web Speech API capture + Web Audio playback queue
-import { send } from "./ws.ts";
 
 // SpeechRecognition is not in TypeScript's standard DOM lib — define what we use
 interface SREvent {
+  readonly resultIndex: number;
   readonly results: {
-    readonly 0: { readonly 0: { readonly transcript: string } };
+    readonly length: number;
+    readonly [index: number]: {
+      readonly isFinal: boolean;
+      readonly 0: { readonly transcript: string };
+    };
   };
 }
 interface SRInstance {
@@ -115,22 +119,28 @@ export function startListening(): void {
   }
   recognition?.stop();
   recognition = new SR();
-  recognition.continuous = false;
+  recognition.continuous = true;
   recognition.interimResults = false;
   recognition.lang = getRecognitionLang();
   recognition.onresult = (e) => {
-    const text = e.results[0][0].transcript.trim();
-    if (text) {
-      window.dispatchEvent(
-        new CustomEvent("jarvis:transcript", { detail: text }),
-      );
-      send({ type: "transcript", text });
+    for (let i = e.resultIndex; i < e.results.length; i += 1) {
+      if (!e.results[i].isFinal) continue;
+      const text = e.results[i][0].transcript.trim();
+      if (text) {
+        window.dispatchEvent(
+          new CustomEvent("jarvis:transcript", { detail: text }),
+        );
+      }
     }
   };
-  recognition.onend = () =>
+  recognition.onend = () => {
+    recognition = null;
     window.dispatchEvent(new Event("jarvis:recognition-end"));
-  recognition.onerror = () =>
+  };
+  recognition.onerror = () => {
+    recognition = null;
     window.dispatchEvent(new Event("jarvis:recognition-end"));
+  };
   recognition.start();
 }
 
