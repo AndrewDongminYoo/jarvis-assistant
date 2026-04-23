@@ -114,7 +114,7 @@ async def synthesize(text: str) -> Optional[bytes]:
     audio = await _tts_elevenlabs(text)
     if audio:
         return audio
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     await loop.run_in_executor(None, _tts_macos, text)
     return None
 

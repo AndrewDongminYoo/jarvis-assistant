@@ -113,7 +113,7 @@ ELEVENLABS_API_KEY=your-elevenlabs-key-here
 # Optional. Defaults to George.
 ELEVENLABS_VOICE_ID=UgBBYS2sOqTuMpoF3BR0
 
-# Optional provider priority overrides.
+# Optional provider priority overrides (comma-separated).
 JARVIS_VOICE_PROVIDERS=anthropic,openai,gemini
 JARVIS_WORK_PROVIDERS=openai,anthropic,gemini
 JARVIS_PLAN_PROVIDERS=anthropic,openai,gemini
@@ -122,6 +122,7 @@ JARVIS_NARRATE_PROVIDERS=anthropic,openai,gemini
 # Optional.
 USER_NAME=Andrew
 CALENDAR_ACCOUNTS=user@example.com
+
 ```
 
 Do not commit `.env`, `JARVIS.md`, local database files, or generated cert/key
