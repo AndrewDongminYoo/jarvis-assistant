@@ -78,6 +78,7 @@ web_modules/
 
 # dotenv environment variable files
 .env
+JARVIS.md
 .env.development.local
 .env.test.local
 .env.production.local
@@ -202,6 +203,7 @@ cover/
 local_settings.py
 db.sqlite3
 db.sqlite3-journal
+data/jarvis.db
 
 # Flask stuff:
 instance/
