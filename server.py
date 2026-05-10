@@ -119,6 +119,15 @@ async def synthesize(text: str) -> Optional[bytes]:
     return None
 
 
+async def _send_audio_chunks(ws: WebSocket, audio: Optional[bytes]) -> None:
+    if not audio:
+        return
+    chunk_size = 16384
+    for i in range(0, len(audio), chunk_size):
+        encoded = base64.b64encode(audio[i : i + chunk_size]).decode()
+        await ws.send_json({"type": "audio", "data": encoded})
+
+
 # ---------------------------------------------------------------------------
 # Action Tag Parser
 # ---------------------------------------------------------------------------
@@ -306,11 +315,47 @@ async def handle_message(ws: WebSocket, text: str) -> None:
     await ws.send_json({"type": "text", "content": spoken})
 
     audio = await synthesize(spoken)
-    if audio:
-        chunk_size = 16384
-        for i in range(0, len(audio), chunk_size):
-            encoded = base64.b64encode(audio[i : i + chunk_size]).decode()
-            await ws.send_json({"type": "audio", "data": encoded})
+    await _send_audio_chunks(ws, audio)
+
+    await ws.send_json({"type": "done"})
+
+
+async def handle_today_report(ws: WebSocket) -> None:
+    await ws.send_json({"type": "thinking"})
+
+    from calendar_access import get_events_summary
+    from mail_access import get_mail_summary
+
+    events, mail = await asyncio.gather(
+        asyncio.to_thread(get_events_summary),
+        asyncio.to_thread(get_mail_summary),
+    )
+
+    try:
+        spoken = await _router.complete(
+            task="narrate",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"[CALENDAR]\n{events}\n\n[MAIL]\n{mail}\n\n"
+                        "Brief morning summary in 2-3 sentences. British butler style."
+                    ),
+                }
+            ],
+            system=_build_system_prompt(),
+            max_tokens=200,
+        )
+    except Exception as e:
+        log.error("Today report router error: %s", e)
+        await ws.send_json({"type": "error", "message": "LLM provider error"})
+        return
+
+    _mem.add_exchange("assistant", spoken)
+    await ws.send_json({"type": "text", "content": spoken})
+
+    audio = await synthesize(spoken)
+    await _send_audio_chunks(ws, audio)
 
     await ws.send_json({"type": "done"})
 
@@ -326,6 +371,8 @@ async def ws_voice(ws: WebSocket) -> None:
                 t = (msg.get("text") or "").strip()
                 if t:
                     await handle_message(ws, t)
+            elif msg.get("type") == "today-report":
+                await handle_today_report(ws)
             elif msg.get("type") == "ping":
                 await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
