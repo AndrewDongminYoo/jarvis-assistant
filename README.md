@@ -131,6 +131,9 @@ output, runs the integration, then re-asks the router (`narrate` task) for a
 | `[ACTION:REMEMBER:fact]`               | Persist a user fact to memory               |
 | `[ACTION:FORGET:fact_id]`              | Delete a stored fact by ID                  |
 | `[ACTION:RECALL:query]`                | Full-text search prior conversation         |
+| `[ACTION:TASK:CREATE:title]`           | Add a pending task                          |
+| `[ACTION:TASK:LIST]`                   | List pending tasks                          |
+| `[ACTION:TASK:DONE:task_id]`           | Mark a task as done                         |
 
 Stored facts are injected back into the system prompt on every turn, so the
 assistant remains personalized across sessions.

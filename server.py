@@ -68,6 +68,9 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
   [ACTION:RECALL:query]                  — search prior conversation
+  [ACTION:TASK:CREATE:title]             — add a pending task
+  [ACTION:TASK:LIST]                     — list pending tasks
+  [ACTION:TASK:DONE:task_id]             — mark a task as done
 {facts_block}
 """
 
@@ -232,6 +235,30 @@ async def dispatch_action(tag: str) -> str:
             return f"No prior conversation matches '{query}'."
         lines = [f"- ({h['role']}) {h['content']}" for h in hits[:5]]
         return "Recalled exchanges:\n" + "\n".join(lines)
+
+    if kind == "TASK":
+        sub = parts[1].upper() if len(parts) > 1 else "LIST"
+        if sub == "LIST":
+            tasks = await asyncio.to_thread(_mem.list_tasks, "pending")
+            if not tasks:
+                return "No pending tasks, sir."
+            lines = [f"- #{t['id']} {t['title']}" for t in tasks[:10]]
+            return "Pending tasks:\n" + "\n".join(lines)
+        if sub == "CREATE" and len(parts) > 2:
+            title = parts[2].strip()
+            if not title:
+                return "Task title was empty."
+            task_id = await asyncio.to_thread(_mem.add_task, title)
+            return f"Task #{task_id} added: {title}"
+        if sub == "DONE" and len(parts) > 2:
+            try:
+                task_id = int(parts[2])
+            except ValueError:
+                return "Invalid task ID."
+            ok = await asyncio.to_thread(_mem.update_task_status, task_id, "done")
+            return (
+                f"Task #{task_id} marked done." if ok else f"Task #{task_id} not found."
+            )
 
     return f"Unknown action: {kind}"
 
