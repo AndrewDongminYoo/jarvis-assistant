@@ -64,7 +64,8 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:BROWSE:url]                    — browse a URL
   [ACTION:SEARCH:query]                  — web search
   [ACTION:WORK:task]                     — dispatch to Claude Code
-  [ACTION:PLAN:description]              — task planning session
+  [ACTION:PLAN:description]              — start a planning session with clarifying questions
+  [ACTION:PLAN_ANSWER:task::answers]     — produce the numbered plan once user has answered
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
   [ACTION:RECALL:query]                  — search prior conversation
@@ -209,6 +210,15 @@ async def dispatch_action(tag: str) -> str:
         from planner import get_clarifying_questions
 
         return await get_clarifying_questions(":".join(parts[1:]))
+
+    if kind == "PLAN_ANSWER":
+        from planner import generate_plan
+
+        payload = ":".join(parts[1:])
+        task, sep, answers = payload.partition("::")
+        if not sep or not task.strip() or not answers.strip():
+            return "Plan answer needs both task and answers separated by '::'."
+        return await generate_plan(task.strip(), answers.strip())
 
     if kind == "REMEMBER":
         from memory import Memory
