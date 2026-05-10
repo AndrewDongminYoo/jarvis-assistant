@@ -276,7 +276,7 @@ async def dispatch_action(tag: str) -> str:
 app = FastAPI(title="JARVIS")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -498,7 +498,7 @@ if __name__ == "__main__":
     start_background_refresh()
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host=os.getenv("HOST", "127.0.0.1"),
         port=PORT,
         ssl_certfile=str(SSL_CERT) if SSL_CERT.exists() else None,
         ssl_keyfile=str(SSL_KEY) if SSL_KEY.exists() else None,

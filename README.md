@@ -8,6 +8,17 @@ This file is the source of truth for runtime behavior. `JARVIS.md` is a
 local/private source prompt that may contain sensitive values and must not be
 committed.
 
+## Local-Only Deployment
+
+JARVIS is designed to run on a single Mac that the user owns. The backend binds
+to `127.0.0.1` by default and trusts every connection it accepts — there is no
+authentication on `/ws/voice` or the `/api/*` endpoints. The action dispatcher
+runs terminal commands, opens browsers, edits notes, and can launch an
+autonomous Claude Code session, all with your user privileges. Do not expose
+the server to other devices, public networks, or the internet. Override the
+bind address with the `HOST` environment variable only after you understand
+these implications.
+
 ## Architecture
 
 ```text
