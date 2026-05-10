@@ -49,7 +49,7 @@ def test_start_task_writes_session_file_under_sessions_dir(monkeypatch, tmp_path
 
 
 def test_get_session_output_missing_session():
-    with tempfile.TemporaryDirectory() as tmp:
+    with tempfile.TemporaryDirectory():
         # different SESSIONS_DIR used purposefully — function checks the
         # default location, so we just verify the not-found path.
         result = work_mode.get_session_output("nonexistent-id-xyz")
