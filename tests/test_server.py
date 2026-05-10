@@ -1,0 +1,180 @@
+import asyncio
+import base64
+import sys
+import tempfile
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import server  # noqa: E402
+from memory import Memory  # noqa: E402
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+class FakeWS:
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    async def send_json(self, msg: dict) -> None:
+        self.sent.append(msg)
+
+
+# ---------------------------------------------------------------------------
+# _task_type
+# ---------------------------------------------------------------------------
+
+
+def test_task_type_defaults_to_voice():
+    assert server._task_type("hello there") == "voice"  # nosec B101
+
+
+def test_task_type_recognizes_english_work_keywords():
+    assert server._task_type("build a CLI") == "work"  # nosec B101
+    assert server._task_type("implement OAuth") == "work"  # nosec B101
+
+
+def test_task_type_recognizes_korean_work_keywords():
+    assert server._task_type("CLI 만들어줘") == "work"  # nosec B101
+    assert server._task_type("OAuth 구현해줘") == "work"  # nosec B101
+
+
+def test_task_type_recognizes_plan_keywords():
+    assert server._task_type("plan my trip") == "plan"  # nosec B101
+    assert server._task_type("여행 계획 짜줘") == "plan"  # nosec B101
+
+
+# ---------------------------------------------------------------------------
+# ACTION_RE
+# ---------------------------------------------------------------------------
+
+
+def test_action_regex_extracts_simple_tag():
+    m = server.ACTION_RE.search("Right away. [ACTION:CALENDAR]")
+    assert m is not None  # nosec B101
+    assert m.group(1) == "CALENDAR"  # nosec B101
+
+
+def test_action_regex_extracts_tag_with_payload():
+    m = server.ACTION_RE.search("[ACTION:NOTES:CREATE:title::body]")
+    assert m is not None  # nosec B101
+    assert m.group(1) == "NOTES:CREATE:title::body"  # nosec B101
+
+
+def test_action_regex_ignores_unclosed_tag():
+    assert server.ACTION_RE.search("[ACTION:CALENDAR") is None  # nosec B101
+
+
+def test_action_regex_strips_only_the_tag():
+    raw = "Good morning. [ACTION:CALENDAR] Right away."
+    spoken = server.ACTION_RE.sub("", raw).strip()
+    assert spoken == "Good morning.  Right away."  # nosec B101
+
+
+# ---------------------------------------------------------------------------
+# _send_audio_chunks
+# ---------------------------------------------------------------------------
+
+
+def test_send_audio_chunks_skips_when_audio_is_none():
+    ws = FakeWS()
+    run(server._send_audio_chunks(ws, None))
+    assert ws.sent == []  # nosec B101
+
+
+def test_send_audio_chunks_sends_single_frame_for_small_audio():
+    ws = FakeWS()
+    audio = b"x" * 1000
+    run(server._send_audio_chunks(ws, audio))
+    assert len(ws.sent) == 1  # nosec B101
+    assert ws.sent[0]["type"] == "audio"  # nosec B101
+    assert base64.b64decode(ws.sent[0]["data"]) == audio  # nosec B101
+
+
+def test_send_audio_chunks_splits_on_chunk_size():
+    ws = FakeWS()
+    audio = b"y" * (16384 * 2 + 100)
+    run(server._send_audio_chunks(ws, audio))
+    assert len(ws.sent) == 3  # nosec B101
+    rebuilt = b"".join(base64.b64decode(m["data"]) for m in ws.sent)
+    assert rebuilt == audio  # nosec B101
+
+
+# ---------------------------------------------------------------------------
+# dispatch_action — sqlite-backed branches with a temp Memory
+# ---------------------------------------------------------------------------
+
+
+def _swap_in_temp_memory(monkeypatch) -> Memory:
+    tmp = tempfile.mkdtemp()
+    mem = Memory(db_path=Path(tmp) / "test.db")
+    monkeypatch.setattr(server, "_mem", mem)
+    return mem
+
+
+def test_dispatch_remember_persists_fact(monkeypatch):
+    mem = _swap_in_temp_memory(monkeypatch)
+    result = run(server.dispatch_action("REMEMBER:user prefers metric"))
+    assert "Remembered" in result  # nosec B101
+    facts = mem.list_facts()
+    assert len(facts) == 1  # nosec B101
+    assert facts[0]["fact"] == "user prefers metric"  # nosec B101
+
+
+def test_dispatch_forget_removes_fact(monkeypatch):
+    mem = _swap_in_temp_memory(monkeypatch)
+    fact_id = mem.add_fact("temporary")
+    result = run(server.dispatch_action(f"FORGET:{fact_id}"))
+    assert result == "Fact forgotten."  # nosec B101
+    assert mem.list_facts() == []  # nosec B101
+
+
+def test_dispatch_forget_handles_invalid_id(monkeypatch):
+    _swap_in_temp_memory(monkeypatch)
+    result = run(server.dispatch_action("FORGET:not-a-number"))
+    assert "Invalid" in result  # nosec B101
+
+
+def test_dispatch_recall_returns_matches(monkeypatch):
+    mem = _swap_in_temp_memory(monkeypatch)
+    mem.add_exchange("user", "remind me about Tokyo trip")
+    mem.add_exchange("assistant", "noted")
+    result = run(server.dispatch_action("RECALL:Tokyo"))
+    assert "Tokyo" in result  # nosec B101
+
+
+def test_dispatch_recall_returns_empty_message_when_no_hits(monkeypatch):
+    _swap_in_temp_memory(monkeypatch)
+    result = run(server.dispatch_action("RECALL:nonexistent"))
+    assert "No prior conversation" in result  # nosec B101
+
+
+def test_dispatch_task_create_then_list(monkeypatch):
+    _swap_in_temp_memory(monkeypatch)
+    create = run(server.dispatch_action("TASK:CREATE:buy groceries"))
+    assert "buy groceries" in create  # nosec B101
+    listing = run(server.dispatch_action("TASK:LIST"))
+    assert "buy groceries" in listing  # nosec B101
+
+
+def test_dispatch_task_done_marks_completed(monkeypatch):
+    mem = _swap_in_temp_memory(monkeypatch)
+    create = run(server.dispatch_action("TASK:CREATE:write report"))
+    task_id = int(create.split("#")[1].split(" ")[0])
+    done = run(server.dispatch_action(f"TASK:DONE:{task_id}"))
+    assert "marked done" in done  # nosec B101
+    pending = mem.list_tasks("pending")
+    assert pending == []  # nosec B101
+
+
+def test_dispatch_unknown_action_returns_message():
+    result = run(server.dispatch_action("MYSTERY"))
+    assert "Unknown action" in result  # nosec B101
+
+
+def test_dispatch_plan_answer_rejects_missing_separator(monkeypatch):
+    _swap_in_temp_memory(monkeypatch)
+    result = run(server.dispatch_action("PLAN_ANSWER:just-task-no-answers"))
+    assert "::" in result  # nosec B101
