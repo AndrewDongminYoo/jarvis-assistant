@@ -17,6 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from llm_router import LLMRouter
+from memory import Memory
 
 load_dotenv()
 log = logging.getLogger("jarvis")
@@ -33,6 +34,7 @@ SSL_CERT = Path("cert.pem")
 SSL_KEY = Path("key.pem")
 
 _router = LLMRouter.from_env()
+_mem = Memory()
 
 
 # ---------------------------------------------------------------------------
@@ -41,9 +43,7 @@ _router = LLMRouter.from_env()
 
 
 def _build_system_prompt() -> str:
-    from memory import Memory
-
-    facts = Memory().facts_as_context()
+    facts = _mem.facts_as_context()
     name = USER_NAME if USER_NAME and USER_NAME.lower() != "sir" else "sir"
     facts_block = f"\n\n{facts}" if facts else ""
     return f"""You are JARVIS, a British AI butler assistant running on macOS.
@@ -221,17 +221,13 @@ async def dispatch_action(tag: str) -> str:
         return await generate_plan(task.strip(), answers.strip())
 
     if kind == "REMEMBER":
-        from memory import Memory
-
         fact = ":".join(parts[1:])
-        Memory().add_fact(fact)
+        await asyncio.to_thread(_mem.add_fact, fact)
         return f"Remembered: {fact}"
 
     if kind == "FORGET":
-        from memory import Memory
-
         try:
-            Memory().delete_fact(int(parts[1]))
+            await asyncio.to_thread(_mem.delete_fact, int(parts[1]))
             return "Fact forgotten."
         except (ValueError, IndexError):
             return "Invalid fact ID."
@@ -288,10 +284,6 @@ app.add_middleware(
 _dist = Path("frontend/dist")
 if _dist.exists():
     app.mount("/app", StaticFiles(directory=str(_dist), html=True), name="static")
-
-from memory import Memory  # noqa: E402
-
-_mem = Memory()
 
 
 def _task_type(text: str) -> str:
