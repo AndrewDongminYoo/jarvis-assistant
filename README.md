@@ -144,10 +144,12 @@ The frontend connects to `/ws/voice`. All messages are JSON.
 
 Inbound (client → server):
 
-| Type         | Payload    | Purpose                          |
-| ------------ | ---------- | -------------------------------- |
-| `transcript` | `{ text }` | A finalized recognized utterance |
-| `ping`       | —          | Liveness check                   |
+| Type           | Payload    | Purpose                                   |
+| -------------- | ---------- | ----------------------------------------- |
+| `transcript`   | `{ text }` | A finalized recognized utterance          |
+| `today-report` | —          | Trigger the morning calendar+mail summary |
+| `abort`        | —          | Cancel the in-flight handler, if any      |
+| `ping`         | —          | Liveness check                            |
 
 Outbound (server → client) per turn, in order:
 

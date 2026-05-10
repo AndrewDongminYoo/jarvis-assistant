@@ -398,25 +398,51 @@ async def handle_today_report(ws: WebSocket) -> None:
     await ws.send_json({"type": "done"})
 
 
+def _on_handler_done(task: asyncio.Task) -> None:
+    if task.cancelled():
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.error("Handler task error: %s", exc)
+
+
 @app.websocket("/ws/voice")
 async def ws_voice(ws: WebSocket) -> None:
     await ws.accept()
     log.info("Client connected")
+    current: Optional[asyncio.Task] = None
+
+    def cancel_current() -> bool:
+        if current is not None and not current.done():
+            current.cancel()
+            return True
+        return False
+
     try:
         while True:
             msg = await ws.receive_json()
-            if msg.get("type") == "transcript":
-                t = (msg.get("text") or "").strip()
-                if t:
-                    await handle_message(ws, t)
-            elif msg.get("type") == "today-report":
-                await handle_today_report(ws)
-            elif msg.get("type") == "ping":
+            kind = msg.get("type")
+            if kind == "transcript":
+                cancel_current()
+                text = (msg.get("text") or "").strip()
+                if text:
+                    current = asyncio.create_task(handle_message(ws, text))
+                    current.add_done_callback(_on_handler_done)
+            elif kind == "today-report":
+                cancel_current()
+                current = asyncio.create_task(handle_today_report(ws))
+                current.add_done_callback(_on_handler_done)
+            elif kind == "abort":
+                if cancel_current():
+                    await ws.send_json({"type": "done"})
+            elif kind == "ping":
                 await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
         log.info("Client disconnected")
+        cancel_current()
     except Exception as e:
         log.error("WS error: %s", e)
+        cancel_current()
 
 
 # ---------------------------------------------------------------------------
