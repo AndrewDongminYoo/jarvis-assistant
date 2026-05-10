@@ -485,11 +485,6 @@ async def api_tasks():
     return {"tasks": _mem.list_tasks()}
 
 
-@app.post("/api/wake")
-async def api_wake():
-    return {"status": "acknowledged"}
-
-
 # ---------------------------------------------------------------------------
 # Entry Point
 # ---------------------------------------------------------------------------

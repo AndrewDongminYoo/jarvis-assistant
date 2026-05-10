@@ -177,7 +177,6 @@ frame — as the signal to re-arm wake listening.
 | `POST`   | `/api/memory/fact`           | Add a fact: `{ "fact": "..." }` |
 | `DELETE` | `/api/memory/fact/{fact_id}` | Remove a fact by ID             |
 | `GET`    | `/api/memory/tasks`          | List planner tasks              |
-| `POST`   | `/api/wake`                  | External wake acknowledgement   |
 
 The built frontend is mounted at `/app` when `frontend/dist/` exists.
 
