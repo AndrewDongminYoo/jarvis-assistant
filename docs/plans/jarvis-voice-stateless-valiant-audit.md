@@ -77,7 +77,7 @@ These fields display false affordance to the user.
 
 `.env.example` lists three env vars that no code uses:
 
-```
+```env
 JARVIS_WAKE_KEY=
 JARVIS_WAKE_URL=https://localhost:8340/api/wake
 JARVIS_CLAP_THRESHOLD=0.30

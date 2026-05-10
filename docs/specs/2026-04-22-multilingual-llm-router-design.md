@@ -55,11 +55,11 @@ Add to the personality block:
 
 ## Part 2: LLM Router
 
-### Problem
+### Router problem
 
 `server.py` is tightly coupled to `AsyncAnthropic`. There is no fallback when Anthropic is unavailable, no way to route code-heavy tasks to a stronger model, and no way to add new providers without editing the core server logic.
 
-### Solution
+### Router solution
 
 New file `llm_router.py` with a `LLMProvider` protocol and a `LLMRouter` that selects providers by task type and falls back automatically.
 
@@ -88,7 +88,7 @@ Three concrete providers:
 
 ### Task Routing
 
-```
+```text
 "voice"   → [AnthropicProvider(haiku), OpenAIProvider(gpt-4o-mini), GeminiProvider(flash)]
 "work"    → [OpenAIProvider(gpt-4o), AnthropicProvider(sonnet), GeminiProvider(pro)]
 "narrate" → [AnthropicProvider(haiku), OpenAIProvider(gpt-4o-mini), GeminiProvider(flash)]
