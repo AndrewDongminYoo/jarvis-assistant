@@ -1,10 +1,15 @@
 # actions.py — System-level AppleScript actions for JARVIS
 import subprocess
 
+APPLESCRIPT_TIMEOUT = 30
+
 
 def _osascript(script: str) -> tuple[bool, str]:
     r = subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, timeout=15
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=APPLESCRIPT_TIMEOUT,
     )
     return r.returncode == 0, r.stdout.strip()
 

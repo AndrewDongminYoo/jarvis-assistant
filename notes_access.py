@@ -2,10 +2,15 @@
 import subprocess
 from typing import Optional
 
+APPLESCRIPT_TIMEOUT = 30
+
 
 def _run(script: str) -> str:
     r = subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, timeout=15
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=APPLESCRIPT_TIMEOUT,
     )
     return r.stdout.strip()
 
@@ -45,6 +50,9 @@ def create_note(title: str, content: str) -> bool:
     ec = content.replace('"', '\\"').replace("\n", "\\n")
     script = f'tell application "Notes" to make new note with properties {{name:"{et}", body:"{ec}"}}'
     r = subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, timeout=15
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=APPLESCRIPT_TIMEOUT,
     )
     return r.returncode == 0

@@ -1,10 +1,15 @@
 # mail_access.py — Read-only Apple Mail access via AppleScript
 import subprocess
 
+APPLESCRIPT_TIMEOUT = 30
+
 
 def _run(script: str) -> str:
     r = subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, timeout=15
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=APPLESCRIPT_TIMEOUT,
     )
     return r.stdout.strip()
 
