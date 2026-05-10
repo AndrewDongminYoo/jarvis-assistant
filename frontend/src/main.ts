@@ -11,6 +11,9 @@ import { parseWakeCommand } from "./wake.ts";
 import { canStartWakeListening, type AppState } from "./session.ts";
 import { init as initOrb, setAudioLevel, setState } from "./orb.ts";
 import { initSettings } from "./settings.ts";
+import { DOUBLE_CLAP_EVENT, startClapDetection } from "./clap.ts";
+
+const TODAY_REPORT_DATE_KEY = "jarvis_today_report_date";
 
 let state: AppState = "idle";
 let activated = false;
@@ -105,6 +108,24 @@ window.addEventListener("jarvis:recognition-end", () => {
 });
 window.addEventListener("jarvis:speech-end", () => startWakeListening(true));
 
+window.addEventListener(DOUBLE_CLAP_EVENT, () => {
+  if (!activated) return;
+  if (state === "thinking" || state === "speaking") return;
+
+  const today = new Date().toDateString();
+  if (localStorage.getItem(TODAY_REPORT_DATE_KEY) !== today) {
+    localStorage.setItem(TODAY_REPORT_DATE_KEY, today);
+    stopListening();
+    transition("thinking");
+    send({ type: "today-report" });
+    return;
+  }
+
+  armed = true;
+  transition("listening", "Listening…");
+  startWakeListening(true);
+});
+
 onLevel((v) => setAudioLevel(v));
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -118,7 +139,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   document.body.addEventListener("click", async (e) => {
     if ((e.target as HTMLElement).closest("#settings-panel, #settings-btn"))
       return;
-    await initAudio();
+    const audioCtx = await initAudio();
+    void startClapDetection(audioCtx);
     activateAssistant();
   });
 });
