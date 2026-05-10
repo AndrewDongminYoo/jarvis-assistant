@@ -228,6 +228,10 @@ Use the app:
 2. Say `Jarvis` or `자비스`.
 3. Give a command, or say the wake phrase and command in one utterance.
 
+For sample utterances per intent (calendar, mail, notes, tasks, planning,
+browse, code) and a troubleshooting matrix, see
+[docs/voice-commands.md](docs/voice-commands.md).
+
 Backend only:
 
 ```bash
