@@ -40,7 +40,14 @@ class Memory:
         self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
         self.conn.executescript(SCHEMA)
         self.conn.commit()
-        self.recent: list[dict] = []
+        self.recent: list[dict] = self._hydrate_recent()
+
+    def _hydrate_recent(self) -> list[dict]:
+        rows = self.conn.execute(
+            "SELECT role, content FROM messages ORDER BY id DESC LIMIT ?",
+            (MAX_RECENT,),
+        ).fetchall()
+        return [{"role": r[0], "content": r[1]} for r in reversed(rows)]
 
     # --- recent tier ---
 
