@@ -1,4 +1,5 @@
 # calendar_access.py — Read Apple Calendar via AppleScript with background cache
+import os
 import subprocess
 import threading
 import time
@@ -6,36 +7,66 @@ import time
 _cache: dict = {"events": [], "updated_at": 0.0}
 _lock = threading.Lock()
 CACHE_TTL = 300
+APPLESCRIPT_TIMEOUT = 45
 
-APPLESCRIPT = """
-set resultList to {}
-set todayStart to (current date)
-set hours of todayStart to 0
-set minutes of todayStart to 0
-set seconds of todayStart to 0
-set weekEnd to todayStart + (7 * days)
-tell application "Calendar"
-    repeat with aCal in calendars
-        repeat with ev in (every event of aCal whose start date >= todayStart and start date <= weekEnd)
-            set evStart to start date of ev
-            set evTitle to summary of ev
-            set resultList to resultList & {evTitle & " | " & (evStart as string)}
+CALENDAR_ACCOUNTS = [
+    name.strip()
+    for name in os.getenv("CALENDAR_ACCOUNTS", "").split(",")
+    if name.strip()
+]
+
+
+def _build_calendar_script() -> str:
+    if CALENDAR_ACCOUNTS:
+        token_list = "{" + ", ".join(f'"{n}"' for n in CALENDAR_ACCOUNTS) + "}"
+        cal_block = f"""set targets to {{}}
+        repeat with acct in accounts
+            set acctName to name of acct
+            repeat with tk in {token_list}
+                if acctName contains tk then
+                    set targets to targets & (calendars of acct)
+                    exit repeat
+                end if
+            end repeat
+        end repeat"""
+    else:
+        cal_block = "set targets to every calendar"
+
+    return f"""
+with timeout of {APPLESCRIPT_TIMEOUT} seconds
+    set resultList to {{}}
+    set todayStart to (current date)
+    set hours of todayStart to 0
+    set minutes of todayStart to 0
+    set seconds of todayStart to 0
+    set weekEnd to todayStart + (7 * days)
+    tell application "Calendar"
+        {cal_block}
+        repeat with aCal in targets
+            repeat with ev in (every event of aCal whose start date >= todayStart and start date <= weekEnd)
+                set evStart to start date of ev
+                set evTitle to summary of ev
+                set resultList to resultList & {{evTitle & " | " & (evStart as string)}}
+            end repeat
         end repeat
-    end repeat
-end tell
-return resultList
+    end tell
+    return resultList
+end timeout
 """
 
 
 def _run(script: str) -> str:
     r = subprocess.run(
-        ["osascript", "-e", script], capture_output=True, text=True, timeout=15
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        timeout=APPLESCRIPT_TIMEOUT,
     )
     return r.stdout.strip()
 
 
 def _fetch_events() -> list[dict]:
-    raw = _run(APPLESCRIPT)
+    raw = _run(_build_calendar_script())
     events: list[dict] = []
     if raw:
         for item in raw.split(", "):
