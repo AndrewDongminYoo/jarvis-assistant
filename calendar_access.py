@@ -50,7 +50,8 @@ with timeout of {APPLESCRIPT_TIMEOUT} seconds
             end repeat
         end repeat
     end tell
-    return resultList
+    set AppleScript's text item delimiters to linefeed
+    return resultList as string
 end timeout
 """
 
@@ -69,7 +70,7 @@ def _fetch_events() -> list[dict]:
     raw = _run(_build_calendar_script())
     events: list[dict] = []
     if raw:
-        for item in raw.split(", "):
+        for item in raw.split("\n"):
             parts = item.strip().split(" | ")
             if len(parts) == 2:
                 events.append({"title": parts[0], "start": parts[1]})
