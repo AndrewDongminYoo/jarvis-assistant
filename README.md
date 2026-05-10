@@ -69,8 +69,16 @@ ElevenLabs fails, macOS `say` remains the fallback.
 ### LLM Routing
 
 The backend routes LLM requests through `llm_router.py`.
+Each user turn is classified into one of four tasks before routing:
 
-Default route priority:
+| Task      | Trigger                                                                   | Anthropic           | OpenAI        | Gemini             |
+| --------- | ------------------------------------------------------------------------- | ------------------- | ------------- | ------------------ |
+| `voice`   | Default for any utterance                                                 | `claude-haiku-4-5`  | `gpt-4o-mini` | `gemini-2.0-flash` |
+| `work`    | Utterance contains `build`, `code`, `implement`, `작성`, `만들어`, `구현` | `claude-sonnet-4-5` | `gpt-4o`      | `gemini-2.0-pro`   |
+| `plan`    | Utterance contains `plan`, `steps`, `outline`, `계획`, `단계`             | `claude-haiku-4-5`  | `gpt-4o-mini` | `gemini-2.0-flash` |
+| `narrate` | Internal — second pass after an action runs (see Action Tags)             | `claude-haiku-4-5`  | `gpt-4o-mini` | `gemini-2.0-flash` |
+
+Default provider order per task:
 
 | Task      | Providers                 |
 | --------- | ------------------------- |
@@ -99,6 +107,72 @@ Example:
 INFO:jarvis.llm_router:LLM request task=voice provider=openai model=gpt-4o-mini
 INFO:jarvis.llm_router:LLM response task=voice provider=openai model=gpt-4o-mini duration_ms=842 chars=57
 ```
+
+### Action Tags
+
+The system prompt instructs the LLM to embed at most one action tag per
+response when system access is needed. The backend strips the tag from spoken
+output, runs the integration, then re-asks the router (`narrate` task) for a
+1–2 sentence spoken summary of the result.
+
+| Tag                                    | Effect                                      |
+| -------------------------------------- | ------------------------------------------- |
+| `[ACTION:CALENDAR]`                    | Upcoming events from Apple Calendar         |
+| `[ACTION:MAIL]`                        | Unread mail summary from Apple Mail         |
+| `[ACTION:MAIL:SEARCH:query]`           | Search mail by subject/sender               |
+| `[ACTION:NOTES:LIST]`                  | List Apple Notes titles                     |
+| `[ACTION:NOTES:READ:title]`            | Read a note body                            |
+| `[ACTION:NOTES:CREATE:title::content]` | Create a new note                           |
+| `[ACTION:TERMINAL:command]`            | Open Terminal and run a command             |
+| `[ACTION:BROWSE:url]`                  | Browse a URL via Playwright                 |
+| `[ACTION:SEARCH:query]`                | Web search summary                          |
+| `[ACTION:WORK:task]`                   | Dispatch a task to Claude Code              |
+| `[ACTION:PLAN:description]`            | Start a planning session with clarifying Qs |
+| `[ACTION:REMEMBER:fact]`               | Persist a user fact to memory               |
+| `[ACTION:FORGET:fact_id]`              | Delete a stored fact by ID                  |
+
+Stored facts are injected back into the system prompt on every turn, so the
+assistant remains personalized across sessions.
+
+### WebSocket Protocol
+
+The frontend connects to `/ws/voice`. All messages are JSON.
+
+Inbound (client → server):
+
+| Type         | Payload    | Purpose                          |
+| ------------ | ---------- | -------------------------------- |
+| `transcript` | `{ text }` | A finalized recognized utterance |
+| `ping`       | —          | Liveness check                   |
+
+Outbound (server → client) per turn, in order:
+
+| Type       | Payload       | Notes                                           |
+| ---------- | ------------- | ----------------------------------------------- |
+| `thinking` | —             | Sent immediately on receipt of a transcript     |
+| `text`     | `{ content }` | Final spoken text (action tags stripped)        |
+| `audio`    | `{ data }`    | Base64 MP3 chunk, 16 KiB; zero or more frames   |
+| `done`     | —             | Turn complete — frontend resumes wake listening |
+| `error`    | `{ message }` | LLM/router failure; no `audio`/`done` follows   |
+| `pong`     | —             | Reply to `ping`                                 |
+
+`audio` may be omitted if ElevenLabs failed and the macOS `say` fallback ran
+server-side. The frontend must therefore treat `done` — not the last `audio`
+frame — as the signal to re-arm wake listening.
+
+## REST API
+
+| Method   | Path                         | Purpose                         |
+| -------- | ---------------------------- | ------------------------------- |
+| `GET`    | `/api/status`                | Service status and version      |
+| `GET`    | `/api/health`                | Liveness probe                  |
+| `GET`    | `/api/memory/facts`          | List persisted user facts       |
+| `POST`   | `/api/memory/fact`           | Add a fact: `{ "fact": "..." }` |
+| `DELETE` | `/api/memory/fact/{fact_id}` | Remove a fact by ID             |
+| `GET`    | `/api/memory/tasks`          | List planner tasks              |
+| `POST`   | `/api/wake`                  | External wake acknowledgement   |
+
+The built frontend is mounted at `/app` when `frontend/dist/` exists.
 
 ## Configuration
 
@@ -153,6 +227,9 @@ Backend only:
 ```bash
 python server.py
 ```
+
+The backend listens on `PORT` (default `8340`). If `cert.pem` and `key.pem`
+exist in the project root, it serves HTTPS; otherwise plain HTTP.
 
 Frontend only:
 
