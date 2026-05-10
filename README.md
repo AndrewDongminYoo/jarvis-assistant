@@ -130,6 +130,7 @@ output, runs the integration, then re-asks the router (`narrate` task) for a
 | `[ACTION:PLAN:description]`            | Start a planning session with clarifying Qs |
 | `[ACTION:REMEMBER:fact]`               | Persist a user fact to memory               |
 | `[ACTION:FORGET:fact_id]`              | Delete a stored fact by ID                  |
+| `[ACTION:RECALL:query]`                | Full-text search prior conversation         |
 
 Stored facts are injected back into the system prompt on every turn, so the
 assistant remains personalized across sessions.

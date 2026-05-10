@@ -67,6 +67,7 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:PLAN:description]              — task planning session
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
+  [ACTION:RECALL:query]                  — search prior conversation
 {facts_block}
 """
 
@@ -221,6 +222,16 @@ async def dispatch_action(tag: str) -> str:
             return "Fact forgotten."
         except (ValueError, IndexError):
             return "Invalid fact ID."
+
+    if kind == "RECALL":
+        query = ":".join(parts[1:]).strip()
+        if not query:
+            return "Recall query was empty."
+        hits = await asyncio.to_thread(_mem.search, query)
+        if not hits:
+            return f"No prior conversation matches '{query}'."
+        lines = [f"- ({h['role']}) {h['content']}" for h in hits[:5]]
+        return "Recalled exchanges:\n" + "\n".join(lines)
 
     return f"Unknown action: {kind}"
 

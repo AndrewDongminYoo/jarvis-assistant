@@ -90,7 +90,7 @@ These flows require reading multiple files at once and are not derivable from an
 `handle_message` runs the LLM **twice** for any response that contains an action tag:
 
 1. First pass — `_task_type(text)` classifies the user utterance into `voice` / `work` / `plan` by keyword (English + Korean: `build|code|구현` → work, `plan|계획` → plan, otherwise `voice`). The router picks the task-specific model.
-2. The response is scanned by `ACTION_RE` for `[ACTION:KIND:...]`. If found, `dispatch_action` runs the corresponding integration (calendar, mail, notes, terminal, browse, search, work, plan, remember, forget) and produces a system result string.
+2. The response is scanned by `ACTION_RE` for `[ACTION:KIND:...]`. If found, `dispatch_action` runs the corresponding integration (calendar, mail, notes, terminal, browse, search, work, plan, remember, forget, recall) and produces a system result string.
 3. Second pass — when an action produced output, the router is called again with `task="narrate"`, feeding back the original assistant turn + a `[SYSTEM RESULT]` user turn, asking for a 1–2 sentence spoken summary. The `narrate` task uses cheaper/faster models on purpose (`claude-haiku`, `gpt-4o-mini`, `gemini-2.0-flash`).
 
 When changing system-prompt action tags in `server.py`, the parser, the dispatcher, and the README action list must move together.
