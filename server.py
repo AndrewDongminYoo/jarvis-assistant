@@ -142,13 +142,13 @@ async def dispatch_action(tag: str) -> str:
     if kind == "CALENDAR":
         from calendar_access import get_events_summary
 
-        return get_events_summary()
+        return await asyncio.to_thread(get_events_summary)
 
     if kind == "MAIL":
         if len(parts) >= 3 and parts[1].upper() == "SEARCH":
             from mail_access import search_mail
 
-            items = search_mail(parts[2])
+            items = await asyncio.to_thread(search_mail, parts[2])
             return (
                 "\n".join(f"- {i['subject']} from {i['sender']}" for i in items)
                 if items
@@ -156,25 +156,25 @@ async def dispatch_action(tag: str) -> str:
             )
         from mail_access import get_mail_summary
 
-        return get_mail_summary()
+        return await asyncio.to_thread(get_mail_summary)
 
     if kind == "NOTES":
         sub = parts[1].upper() if len(parts) > 1 else "LIST"
         if sub == "LIST":
             from notes_access import list_note_titles
 
-            titles = list_note_titles()
+            titles = await asyncio.to_thread(list_note_titles)
             return ("Your notes: " + ", ".join(titles)) if titles else "No notes found."
         if sub == "READ" and len(parts) > 2:
             from notes_access import read_note
 
-            body = read_note(parts[2])
+            body = await asyncio.to_thread(read_note, parts[2])
             return body if body else f"Note '{parts[2]}' not found."
         if sub == "CREATE" and len(parts) > 2:
             from notes_access import create_note
 
             title, _, content = parts[2].partition("::")
-            ok = create_note(title.strip(), content.strip())
+            ok = await asyncio.to_thread(create_note, title.strip(), content.strip())
             return (
                 f"Note '{title.strip()}' created." if ok else "Failed to create note."
             )
@@ -183,7 +183,7 @@ async def dispatch_action(tag: str) -> str:
         from actions import open_terminal
 
         cmd = parts[1] if len(parts) > 1 else ""
-        open_terminal(cmd)
+        await asyncio.to_thread(open_terminal, cmd)
         return f"Terminal opened{': ' + cmd if cmd else ''}."
 
     if kind == "BROWSE":
