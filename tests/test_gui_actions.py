@@ -112,3 +112,38 @@ def test_label_for_strips_whitespace():
 def test_label_for_returns_none_when_all_empty():
     assert gui_actions._label_for({}) is None  # nosec B101
     assert gui_actions._label_for({"title": "", "value": "  "}) is None  # nosec B101
+
+
+def test_format_element_basic_button():
+    line = gui_actions._format_element("button", "Send", None, True, 0)
+    assert line == 'button "Send"'  # nosec B101
+
+
+def test_format_element_indents_two_spaces_per_depth():
+    line = gui_actions._format_element("button", "Reply", None, True, 2)
+    assert line == '    button "Reply"'  # nosec B101
+
+
+def test_format_element_disabled_appended():
+    line = gui_actions._format_element("button", "Reply All", None, False, 1)
+    assert line == '  button "Reply All" [disabled]'  # nosec B101
+
+
+def test_format_element_text_field_with_value_distinct_from_label():
+    line = gui_actions._format_element("text_field", "Search", "asyncio", True, 1)
+    assert line == '  text_field "Search" "asyncio"'  # nosec B101
+
+
+def test_format_element_text_field_with_value_equal_to_label_omits_duplicate():
+    line = gui_actions._format_element("text_field", "Search", None, True, 0)
+    assert line == 'text_field "Search"'  # nosec B101
+
+
+def test_format_element_no_label_emits_bare_role():
+    line = gui_actions._format_element("toolbar", None, None, True, 0)
+    assert line == "toolbar"  # nosec B101
+
+
+def test_format_element_no_label_with_disabled():
+    line = gui_actions._format_element("toolbar", None, None, False, 1)
+    assert line == "  toolbar [disabled]"  # nosec B101

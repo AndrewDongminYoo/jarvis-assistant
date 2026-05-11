@@ -97,6 +97,25 @@ def _label_for(element: Any) -> Optional[str]:
     return None
 
 
+def _format_element(
+    role: str,
+    label: Optional[str],
+    value: Optional[str],
+    enabled: bool,
+    depth: int,
+) -> str:
+    indent = "  " * depth
+    parts = [role]
+    if label is not None:
+        parts.append(f'"{label}"')
+    if value is not None and value != label:
+        parts.append(f'"{value}"')
+    line = indent + " ".join(parts)
+    if not enabled:
+        line += " [disabled]"
+    return line
+
+
 def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
     """Map an AX role to (snake_case_name, tier). Tier ∈ {"A", "B"} or None."""
     if ax_role in _TIER_A_ROLES:
