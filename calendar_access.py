@@ -1,30 +1,35 @@
 # calendar_access.py — Read Apple Calendar via AppleScript with background cache
+import logging
 import os
 import subprocess
 import threading
 import time
+
+log = logging.getLogger("jarvis.calendar")
 
 _cache: dict = {"events": [], "updated_at": 0.0}
 _lock = threading.Lock()
 CACHE_TTL = 300
 APPLESCRIPT_TIMEOUT = 45
 
-CALENDAR_ACCOUNTS = [
-    name.strip()
-    for name in os.getenv("CALENDAR_ACCOUNTS", "").split(",")
-    if name.strip()
+# Comma-separated list of calendar display names (substring match) to limit the
+# scan. Recent macOS Calendar.app no longer exposes the "accounts" collection to
+# AppleScript, so filtering is done against the visible calendar names instead
+# (e.g. "ydm2790@gmail.com", "앤드류 (동민)"). Leave empty to scan every calendar.
+CALENDAR_NAMES = [
+    name.strip() for name in os.getenv("CALENDAR_NAMES", "").split(",") if name.strip()
 ]
 
 
 def _build_calendar_script() -> str:
-    if CALENDAR_ACCOUNTS:
-        token_list = "{" + ", ".join(f'"{n}"' for n in CALENDAR_ACCOUNTS) + "}"
+    if CALENDAR_NAMES:
+        token_list = "{" + ", ".join(f'"{n}"' for n in CALENDAR_NAMES) + "}"
         cal_block = f"""set targets to {{}}
-        repeat with acct in accounts
-            set acctName to name of acct
+        repeat with aCal in calendars
+            set calName to name of aCal
             repeat with tk in {token_list}
-                if acctName contains tk then
-                    set targets to targets & (calendars of acct)
+                if calName contains tk then
+                    set end of targets to aCal
                     exit repeat
                 end if
             end repeat
@@ -63,6 +68,16 @@ def _run(script: str) -> str:
         text=True,
         timeout=APPLESCRIPT_TIMEOUT,
     )
+    if r.returncode != 0:
+        # Surface AppleScript failures so they don't silently degrade to an
+        # empty calendar. A previous version of this module iterated the now-
+        # removed `accounts` collection and looked perfectly healthy in logs
+        # because stderr was discarded.
+        log.warning(
+            "Calendar AppleScript failed (rc=%s): %s",
+            r.returncode,
+            r.stderr.strip(),
+        )
     return r.stdout.strip()
 
 

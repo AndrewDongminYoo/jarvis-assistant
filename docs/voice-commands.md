@@ -116,14 +116,14 @@ output later.
 
 ## When something goes wrong
 
-| Symptom                                 | Likely cause                                           | Fix                                                                  |
-| --------------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------- |
-| Calendar action returns "couldn't read" | AppleScript `whose` scan over many calendars           | Set `CALENDAR_ACCOUNTS` in `.env` to limit scan to specific accounts |
-| Browse / Search actions fail            | Playwright chromium not installed                      | Run `uv run playwright install` once                                 |
-| No audio playback, only text            | ElevenLabs error or quota                              | macOS `say` fallback runs server-side — check the page or your plan  |
-| Wake phrase isn't being detected        | Recognition language mismatch                          | Open settings, switch between `ko-KR` / `en-US`                      |
-| Today Report fires every double-clap    | localStorage was cleared or browser is in private mode | Use the regular page; the date key persists day-to-day               |
-| Server logs `LLM provider failed`       | API key missing, network blip, rate limit              | Add a second provider in `.env` for automatic fallback               |
+| Symptom                                 | Likely cause                                           | Fix                                                                   |
+| --------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
+| Calendar action returns "couldn't read" | AppleScript `whose` scan over many calendars           | Set `CALENDAR_NAMES` in `.env` to the calendar display names you want |
+| Browse / Search actions fail            | Playwright chromium not installed                      | Run `uv run playwright install` once                                  |
+| No audio playback, only text            | ElevenLabs error or quota                              | macOS `say` fallback runs server-side — check the page or your plan   |
+| Wake phrase isn't being detected        | Recognition language mismatch                          | Open settings, switch between `ko-KR` / `en-US`                       |
+| Today Report fires every double-clap    | localStorage was cleared or browser is in private mode | Use the regular page; the date key persists day-to-day                |
+| Server logs `LLM provider failed`       | API key missing, network blip, rate limit              | Add a second provider in `.env` for automatic fallback                |
 
 ---
 

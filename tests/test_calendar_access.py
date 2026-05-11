@@ -7,24 +7,50 @@ import calendar_access  # noqa: E402
 
 
 def test_default_script_targets_every_calendar(monkeypatch):
-    monkeypatch.setattr(calendar_access, "CALENDAR_ACCOUNTS", [])
+    monkeypatch.setattr(calendar_access, "CALENDAR_NAMES", [])
     script = calendar_access._build_calendar_script()
     assert "set targets to every calendar" in script  # nosec B101
-    assert "repeat with acct in accounts" not in script  # nosec B101
+    assert "repeat with aCal in calendars" not in script  # nosec B101
 
 
-def test_filtered_script_loops_accounts_and_emits_token_list(monkeypatch):
+def test_filtered_script_loops_calendars_and_emits_token_list(monkeypatch):
     monkeypatch.setattr(
         calendar_access,
-        "CALENDAR_ACCOUNTS",
-        ["primary@gmail.com", "work@example.com"],
+        "CALENDAR_NAMES",
+        ["ydm2790@gmail.com", "앤드류 (동민)"],
     )
     script = calendar_access._build_calendar_script()
-    assert "repeat with acct in accounts" in script  # nosec B101
-    assert "name of acct" in script  # nosec B101
-    assert '"primary@gmail.com"' in script  # nosec B101
-    assert '"work@example.com"' in script  # nosec B101
+    # New script iterates Calendar.app's `calendars` collection directly —
+    # the `accounts` collection was removed from the scriptable surface.
+    assert "repeat with aCal in calendars" in script  # nosec B101
+    assert "name of aCal" in script  # nosec B101
+    assert '"ydm2790@gmail.com"' in script  # nosec B101
+    assert '"앤드류 (동민)"' in script  # nosec B101
+    assert "repeat with acct in accounts" not in script  # nosec B101
     assert "set targets to every calendar" not in script  # nosec B101
+
+
+def test_run_logs_warning_on_applescript_failure(monkeypatch, caplog):
+    """A non-zero returncode from osascript must surface, not silently turn
+    into empty stdout — that is exactly how the previous `accounts` regression
+    hid for months."""
+    import subprocess as _sp
+
+    class FakeCompleted:
+        returncode = 1
+        stdout = ""
+        stderr = "execution error: The variable accounts is not defined. (-2753)"
+
+    def fake_run(*args, **kwargs):
+        return FakeCompleted()
+
+    monkeypatch.setattr(_sp, "run", fake_run)
+    with caplog.at_level("WARNING", logger="jarvis.calendar"):
+        result = calendar_access._run("ignored")
+    assert result == ""  # nosec B101
+    assert any(
+        "AppleScript failed" in rec.message for rec in caplog.records
+    )  # nosec B101
 
 
 def test_script_wraps_in_with_timeout_block():

@@ -212,7 +212,7 @@ JARVIS_NARRATE_PROVIDERS=anthropic,openai,gemini
 
 # Optional.
 USER_NAME=Andrew
-CALENDAR_ACCOUNTS=user@example.com
+CALENDAR_NAMES=user@example.com,Work Alias
 
 ```
 
