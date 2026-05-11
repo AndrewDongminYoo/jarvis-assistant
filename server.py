@@ -387,6 +387,51 @@ async def _run_action_loop(
 
 async def handle_message(ws: WebSocket, text: str) -> None:
     await ws.send_json({"type": "thinking"})
+
+    import safety  # local import
+
+    wsid = _ws_id(ws)
+    pending_existing = _pending.pop(wsid, None)
+    if pending_existing is not None and not pending_existing.expired():
+        if safety.is_affirmative(text):
+            try:
+                result = await dispatch_action(pending_existing.action)
+            except Exception as e:  # noqa: BLE001
+                log.error("Confirmed action failed: %s", e)
+                result = "Action failed."
+            follow_msgs = pending_existing.history + [
+                {
+                    "role": "user",
+                    "content": f"[SYSTEM RESULT]\n{result}\n\nNarrate in 1-2 sentences.",
+                },
+            ]
+            try:
+                spoken = await _router.complete(
+                    task="narrate",
+                    messages=follow_msgs,
+                    system=_build_system_prompt(),
+                    max_tokens=150,
+                )
+            except Exception:  # noqa: BLE001
+                spoken = result
+            _mem.add_exchange("user", text)
+            _mem.add_exchange("assistant", spoken)
+            await ws.send_json({"type": "text", "content": spoken})
+            audio = await synthesize(spoken)
+            await _send_audio_chunks(ws, audio)
+            await ws.send_json({"type": "done"})
+            return
+        if safety.is_negative(text):
+            spoken = "Cancelled. / 취소했어요."
+            _mem.add_exchange("user", text)
+            _mem.add_exchange("assistant", spoken)
+            await ws.send_json({"type": "text", "content": spoken})
+            audio = await synthesize(spoken)
+            await _send_audio_chunks(ws, audio)
+            await ws.send_json({"type": "done"})
+            return
+        # neither yes nor no — drop pending (already popped), fall through to normal handling
+
     messages = _mem.get_recent()
     messages.append({"role": "user", "content": text})
 

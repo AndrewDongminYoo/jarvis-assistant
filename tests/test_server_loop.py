@@ -202,3 +202,117 @@ def test_handle_message_confirm_emits_pending_and_no_dispatch(monkeypatch):
     assert (
         "?" in text_msg["content"] or "proceed" in text_msg["content"].lower()
     )  # nosec B101
+
+
+def test_handle_message_pending_yes_executes_action(monkeypatch):
+    fake_router = FakeRouter(["Mail sent."])  # narrate pass
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    called = {}
+
+    async def fake_dispatch(tag):
+        called["tag"] = tag
+        return "sent"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    server._pending.clear()
+    server._pending[server._ws_id(ws)] = server.PendingAction(
+        action="MAIL:SEND:a@b.com::hi",
+        history=[{"role": "user", "content": "send mail"}],
+        asked_at=__import__("time").time(),
+    )
+
+    run(server.handle_message(ws, "yes"))
+
+    assert called["tag"] == "MAIL:SEND:a@b.com::hi"  # nosec B101
+    assert server._pending == {}  # nosec B101
+
+
+def test_handle_message_pending_no_cancels(monkeypatch):
+    monkeypatch.setattr(server, "_router", FakeRouter([]))
+
+    async def must_not_be_called(_):
+        raise AssertionError("dispatch must not run on cancellation")
+
+    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    server._pending.clear()
+    server._pending[server._ws_id(ws)] = server.PendingAction(
+        action="MAIL:SEND:a@b.com::hi",
+        history=[],
+        asked_at=__import__("time").time(),
+    )
+
+    run(server.handle_message(ws, "no, cancel"))
+
+    text_msg = next(m for m in ws.sent if m["type"] == "text")
+    assert (
+        "cancel" in text_msg["content"].lower() or "취소" in text_msg["content"]
+    )  # nosec B101
+    assert server._pending == {}  # nosec B101
+
+
+def test_handle_message_pending_expired_falls_through(monkeypatch):
+    import time as _time
+
+    fake_router = FakeRouter(["Just chatting."])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def must_not_be_called(_):
+        raise AssertionError("expired pending must not dispatch")
+
+    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    server._pending.clear()
+    server._pending[server._ws_id(ws)] = server.PendingAction(
+        action="MAIL:SEND:a@b.com::hi",
+        history=[],
+        asked_at=_time.time() - 120.0,
+        expires_in=30.0,
+    )
+
+    run(server.handle_message(ws, "anyway, what's the weather"))
+
+    assert server._pending == {}  # nosec B101
+    text_msg = next(m for m in ws.sent if m["type"] == "text")
+    assert "Just chatting" in text_msg["content"]  # nosec B101
