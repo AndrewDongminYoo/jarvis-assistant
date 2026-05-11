@@ -379,3 +379,32 @@ def test_action_loop_breaks_on_repeated_action(monkeypatch):
     assert len(steps) == 1  # nosec B101
     assert pending is None  # nosec B101
     assert len(fake.responses) == 1  # third response never consumed  # nosec B101
+
+
+def test_action_loop_stops_at_max_steps(monkeypatch):
+    fake = FakeRouter(
+        [
+            "Step A. [ACTION:UI:OBSERVE]",
+            "Step B. [ACTION:UI:FOCUS:Chrome]",
+            "Step C. [ACTION:SEARCH:python]",
+            "Should not run.",
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+
+    async def fake_dispatch(tag):
+        return f"ran {tag}"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "do three things"}],
+            system="sys",
+            task="voice",
+            max_steps=3,
+        )
+    )
+    assert pending is None  # nosec B101
+    assert len(steps) == 3  # nosec B101
+    assert len(fake.responses) == 1  # fourth never consumed  # nosec B101
