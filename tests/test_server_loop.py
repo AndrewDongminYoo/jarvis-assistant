@@ -86,3 +86,36 @@ def test_action_loop_max_steps_one_stops_after_first_action(monkeypatch):
     )
     assert len(steps) == 1  # nosec B101
     assert len(fake.responses) == 1  # one unused — confirms loop stopped  # nosec B101
+
+
+def test_handle_message_dispatches_safe_action(monkeypatch):
+    fake_router = FakeRouter(["Checking. [ACTION:CALENDAR]", "No events today."])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def fake_dispatch(tag):
+        assert tag == "CALENDAR"  # nosec B101
+        return "0 events"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    run(server.handle_message(ws, "any meetings?"))
+
+    types = [m["type"] for m in ws.sent]
+    assert "thinking" in types  # nosec B101
+    assert "text" in types  # nosec B101
+    assert types[-1] == "done"  # nosec B101
+    text_msg = next(m for m in ws.sent if m["type"] == "text")
+    assert "No events today" in text_msg["content"]  # nosec B101

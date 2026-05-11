@@ -368,37 +368,27 @@ async def handle_message(ws: WebSocket, text: str) -> None:
     messages.append({"role": "user", "content": text})
 
     try:
-        raw = await _router.complete(
-            task=_task_type(text),
+        raw, steps, pending = await _run_action_loop(
             messages=messages,
             system=_build_system_prompt(),
-            max_tokens=250,
+            task=_task_type(text),
+            max_steps=1,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         log.error("LLM router error: %s", e)
         await ws.send_json({"type": "error", "message": "LLM provider error"})
         return
 
-    # Dispatch action tag if present
-    action_result = ""
-    m = ACTION_RE.search(raw)
-    if m:
-        try:
-            action_result = await dispatch_action(m.group(1))
-        except Exception as e:
-            log.error("Action dispatch error: %s", e)
-            action_result = "Action failed."
-
-    # Strip action tags for TTS
     spoken = ACTION_RE.sub("", raw).strip()
 
-    # Follow-up narration when action produced content
-    if action_result:
+    if steps:
         follow_msgs = list(messages) + [
             {"role": "assistant", "content": raw},
             {
                 "role": "user",
-                "content": f"[SYSTEM RESULT]\n{action_result}\n\nNarrate in 1-2 sentences.",
+                "content": (
+                    f"[SYSTEM RESULT]\n{steps[-1][1]}\n\n" "Narrate in 1-2 sentences."
+                ),
             },
         ]
         try:
@@ -408,8 +398,8 @@ async def handle_message(ws: WebSocket, text: str) -> None:
                 system=_build_system_prompt(),
                 max_tokens=150,
             )
-        except Exception:
-            spoken = action_result
+        except Exception:  # noqa: BLE001
+            spoken = steps[-1][1]
 
     _mem.add_exchange("user", text)
     _mem.add_exchange("assistant", spoken)
