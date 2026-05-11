@@ -8,6 +8,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -63,11 +64,26 @@ _pending: dict[str, PendingAction] = {}
 # ---------------------------------------------------------------------------
 
 
+def _now_local_label() -> str:
+    """Return today's date and time in the server's local timezone, formatted
+    for the LLM system prompt. Anchored on the host clock (KST for the user)
+    so relative phrases like '내일' / 'tomorrow' resolve against the right
+    day instead of the model's training-cutoff default.
+    """
+    now = datetime.now().astimezone()
+    return now.strftime("%A, %B %d, %Y %H:%M %Z")
+
+
 def _build_system_prompt() -> str:
     facts = _mem.facts_as_context()
     name = USER_NAME if USER_NAME and USER_NAME.lower() != "sir" else "sir"
     facts_block = f"\n\n{facts}" if facts else ""
+    now_label = _now_local_label()
     return f"""You are JARVIS, a British AI butler assistant running on macOS.
+
+The current local time is {now_label}. Anchor every relative date or time
+phrase (today, tomorrow, 내일, 오늘, "this Friday", etc.) against this
+timestamp, not against your training-cutoff default.
 
 Personality: Precise, dry wit, subtly sardonic, unwaveringly helpful. British vocabulary.
 Voice: Concise — max 2-3 sentences. No markdown. You are speaking aloud.

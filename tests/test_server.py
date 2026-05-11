@@ -178,3 +178,30 @@ def test_dispatch_plan_answer_rejects_missing_separator(monkeypatch):
     _swap_in_temp_memory(monkeypatch)
     result = run(server.dispatch_action("PLAN_ANSWER:just-task-no-answers"))
     assert "::" in result  # nosec B101
+
+
+def test_system_prompt_embeds_current_local_time(monkeypatch):
+    """The prompt must anchor today's date so relative phrases like
+    "내일" / "tomorrow" resolve against the host clock, not the model's
+    training-cutoff default.
+    """
+    fake_label = "Tuesday, May 12, 2026 08:42 KST"
+    monkeypatch.setattr(server, "_now_local_label", lambda: fake_label)
+    prompt = server._build_system_prompt()
+    assert fake_label in prompt  # nosec B101
+    assert "Anchor every relative date" in prompt  # nosec B101
+
+
+def test_now_local_label_uses_host_timezone():
+    """Smoke check: the label includes a four-digit year and a weekday name.
+    We don't pin the exact value because the host clock changes; we just
+    verify the formatting contract.
+    """
+    import re as _re
+
+    label = server._now_local_label()
+    assert _re.search(r"\b20\d{2}\b", label), label  # year  # nosec B101
+    assert _re.search(  # weekday  # nosec B101
+        r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),",
+        label,
+    ), label
