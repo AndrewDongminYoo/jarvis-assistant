@@ -159,6 +159,7 @@ async def _send_audio_chunks(ws: WebSocket, audio: Optional[bytes]) -> None:
 # ---------------------------------------------------------------------------
 
 ACTION_RE = re.compile(r"\[ACTION:([^\]]+)\]")
+MAX_STEPS = 5
 
 
 async def dispatch_action(tag: str) -> str:
@@ -442,7 +443,7 @@ async def handle_message(ws: WebSocket, text: str) -> None:
             messages=messages,
             system=_build_system_prompt(),
             task=_task_type(text),
-            max_steps=1,
+            max_steps=MAX_STEPS,
         )
     except Exception as e:  # noqa: BLE001
         log.error("LLM router error: %s", e)

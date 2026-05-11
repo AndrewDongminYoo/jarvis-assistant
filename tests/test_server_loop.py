@@ -89,7 +89,11 @@ def test_action_loop_max_steps_one_stops_after_first_action(monkeypatch):
 
 
 def test_handle_message_dispatches_safe_action(monkeypatch):
-    fake_router = FakeRouter(["Checking. [ACTION:CALENDAR]", "No events today."])
+    # max_steps=5 means the action loop may call the LLM multiple times:
+    # 1. First call returns action → execute → loop again
+    # 2. Second call returns no action → loop terminates
+    # 3. Narration call to summarize the result
+    fake_router = FakeRouter(["Checking. [ACTION:CALENDAR]", "OK.", "No events today."])
     monkeypatch.setattr(server, "_router", fake_router)
 
     async def fake_dispatch(tag):
