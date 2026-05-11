@@ -6,6 +6,8 @@ import base64
 import logging
 import os
 import re
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +37,25 @@ SSL_KEY = Path("key.pem")
 
 _router = LLMRouter.from_env()
 _mem = Memory()
+
+
+# ---------------------------------------------------------------------------
+# Pending Actions
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PendingAction:
+    action: str
+    history: list[dict]
+    asked_at: float
+    expires_in: float = 30.0
+
+    def expired(self) -> bool:
+        return time.time() - self.asked_at > self.expires_in
+
+
+_pending: dict[str, PendingAction] = {}
 
 
 # ---------------------------------------------------------------------------
