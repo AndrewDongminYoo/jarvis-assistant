@@ -412,3 +412,47 @@ def test_action_loop_stops_at_max_steps(monkeypatch):
     assert pending is None  # nosec B101
     assert len(steps) == 3  # nosec B101
     assert len(fake.responses) == 1  # fourth never consumed  # nosec B101
+
+
+def test_handle_message_pending_conflicting_reply_cancels(monkeypatch):
+    """When the reply matches BOTH detectors (e.g. "no go", "yes, cancel"),
+    cancel wins. Erring toward cancellation is the safer default for risky
+    actions.
+    """
+    import time as _time
+
+    monkeypatch.setattr(server, "_router", FakeRouter([]))
+
+    async def must_not_be_called(_):
+        raise AssertionError("conflicting reply must not dispatch")
+
+    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    for reply in ("no go", "yes, cancel that", "그래 취소"):
+        ws = FakeWS()
+        server._pending.clear()
+        server._pending[server._ws_id(ws)] = server.PendingAction(
+            action="TERMINAL:rm important.txt",
+            history=[],
+            asked_at=_time.time(),
+        )
+
+        run(server.handle_message(ws, reply))
+
+        assert server._pending == {}, reply  # nosec B101
+        text_msg = next(m for m in ws.sent if m["type"] == "text")
+        assert (
+            "cancel" in text_msg["content"].lower() or "취소" in text_msg["content"]
+        ), reply  # nosec B101

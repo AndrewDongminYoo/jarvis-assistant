@@ -396,6 +396,19 @@ async def handle_message(ws: WebSocket, text: str) -> None:
     wsid = _ws_id(ws)
     pending_existing = _pending.pop(wsid, None)
     if pending_existing is not None and not pending_existing.expired():
+        # Negative-first: if the reply contains any cancel/stop token, cancel —
+        # even when an affirmative token is also present (e.g. "no go",
+        # "yes, cancel"). Erring toward cancellation is the safer default
+        # for risky-action confirmations.
+        if safety.is_negative(text):
+            spoken = "Cancelled. / 취소했어요."
+            _mem.add_exchange("user", text)
+            _mem.add_exchange("assistant", spoken)
+            await ws.send_json({"type": "text", "content": spoken})
+            audio = await synthesize(spoken)
+            await _send_audio_chunks(ws, audio)
+            await ws.send_json({"type": "done"})
+            return
         if safety.is_affirmative(text):
             try:
                 result = await dispatch_action(pending_existing.action)
@@ -417,15 +430,6 @@ async def handle_message(ws: WebSocket, text: str) -> None:
                 )
             except Exception:  # noqa: BLE001
                 spoken = result
-            _mem.add_exchange("user", text)
-            _mem.add_exchange("assistant", spoken)
-            await ws.send_json({"type": "text", "content": spoken})
-            audio = await synthesize(spoken)
-            await _send_audio_chunks(ws, audio)
-            await ws.send_json({"type": "done"})
-            return
-        if safety.is_negative(text):
-            spoken = "Cancelled. / 취소했어요."
             _mem.add_exchange("user", text)
             _mem.add_exchange("assistant", spoken)
             await ws.send_json({"type": "text", "content": spoken})
