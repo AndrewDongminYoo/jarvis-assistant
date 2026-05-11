@@ -47,6 +47,56 @@ _TIER_B_ROLES: dict[str, str] = {
 }
 
 
+# Element accessors — production wraps live pyobjc AX handles; tests pass
+# dicts. The isinstance check is the only fork between the two paths.
+
+
+def _ax_attribute(element: Any, attr: str) -> Any:
+    """Production AX attribute getter. Lazy pyobjc import."""
+    from ApplicationServices import AXUIElementCopyAttributeValue
+
+    err, value = AXUIElementCopyAttributeValue(element, attr, None)
+    if err != 0:
+        return None
+    return value
+
+
+def _get_role(element: Any) -> str:
+    if isinstance(element, dict):
+        return element.get("role", "")
+    return _ax_attribute(element, "AXRole") or ""
+
+
+def _get_attribute(element: Any, attr: str) -> Optional[str]:
+    if isinstance(element, dict):
+        key = attr.removeprefix("AX").lower()
+        v = element.get(key)
+        return v if isinstance(v, str) or v is None else str(v)
+    v = _ax_attribute(element, attr)
+    return v if isinstance(v, str) else None
+
+
+def _get_children(element: Any) -> list:
+    if isinstance(element, dict):
+        return element.get("children", [])
+    return _ax_attribute(element, "AXChildren") or []
+
+
+def _is_enabled(element: Any) -> bool:
+    if isinstance(element, dict):
+        return element.get("enabled", True)
+    v = _ax_attribute(element, "AXEnabled")
+    return bool(v) if v is not None else True
+
+
+def _label_for(element: Any) -> Optional[str]:
+    for attr in ("AXTitle", "AXValue", "AXDescription", "AXHelp"):
+        v = _get_attribute(element, attr)
+        if v and v.strip():
+            return v.strip()
+    return None
+
+
 def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
     """Map an AX role to (snake_case_name, tier). Tier ∈ {"A", "B"} or None."""
     if ax_role in _TIER_A_ROLES:

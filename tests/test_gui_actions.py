@@ -63,3 +63,52 @@ def test_normalize_role_ignored_returns_none_pair():
         "",
     ):
         assert gui_actions._normalize_role(role) == (None, None), role  # nosec B101
+
+
+def test_get_role_reads_from_dict():
+    assert gui_actions._get_role({"role": "AXButton"}) == "AXButton"  # nosec B101
+    assert gui_actions._get_role({}) == ""  # nosec B101
+
+
+def test_get_children_reads_from_dict_default_empty():
+    assert gui_actions._get_children({"children": [1, 2]}) == [1, 2]  # nosec B101
+    assert gui_actions._get_children({}) == []  # nosec B101
+
+
+def test_is_enabled_defaults_true():
+    assert gui_actions._is_enabled({}) is True  # nosec B101
+    assert gui_actions._is_enabled({"enabled": False}) is False  # nosec B101
+    assert gui_actions._is_enabled({"enabled": True}) is True  # nosec B101
+
+
+def test_get_attribute_dict_lowercase_mapping():
+    el = {"title": "Send", "value": "hello", "description": "icon", "help": "?"}
+    assert gui_actions._get_attribute(el, "AXTitle") == "Send"  # nosec B101
+    assert gui_actions._get_attribute(el, "AXValue") == "hello"  # nosec B101
+    assert gui_actions._get_attribute(el, "AXDescription") == "icon"  # nosec B101
+    assert gui_actions._get_attribute(el, "AXHelp") == "?"  # nosec B101
+    assert gui_actions._get_attribute(el, "AXFoo") is None  # nosec B101
+
+
+def test_label_for_picks_title_first():
+    el = {"title": "Save", "value": "ignored", "description": "ignored"}
+    assert gui_actions._label_for(el) == "Save"  # nosec B101
+
+
+def test_label_for_falls_through_to_value():
+    el = {"title": "", "value": "hello"}
+    assert gui_actions._label_for(el) == "hello"  # nosec B101
+
+
+def test_label_for_falls_through_to_description_then_help():
+    assert gui_actions._label_for({"description": "icon"}) == "icon"  # nosec B101
+    assert gui_actions._label_for({"help": "tooltip"}) == "tooltip"  # nosec B101
+
+
+def test_label_for_strips_whitespace():
+    assert gui_actions._label_for({"title": "  Save  "}) == "Save"  # nosec B101
+
+
+def test_label_for_returns_none_when_all_empty():
+    assert gui_actions._label_for({}) is None  # nosec B101
+    assert gui_actions._label_for({"title": "", "value": "  "}) is None  # nosec B101
