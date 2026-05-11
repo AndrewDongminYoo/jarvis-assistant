@@ -361,6 +361,8 @@ async def _run_action_loop(
         if not m:
             return raw, steps, None
         tag = m.group(1)
+        if steps and steps[-1][0] == tag:
+            return raw, steps, None
         decision = safety.classify(tag)
         if decision is safety.Decision.CONFIRM:
             pending = PendingAction(

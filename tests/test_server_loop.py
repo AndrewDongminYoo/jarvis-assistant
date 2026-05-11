@@ -347,3 +347,35 @@ def test_action_loop_runs_two_safe_steps(monkeypatch):
         "SEARCH:python asyncio",
     ]  # nosec B101
     assert raw == "Found docs about asyncio."  # nosec B101
+
+
+def test_action_loop_breaks_on_repeated_action(monkeypatch):
+    fake = FakeRouter(
+        [
+            "Looking. [ACTION:CALENDAR]",
+            "Looking again. [ACTION:CALENDAR]",
+            "Should not be reached.",
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+
+    calls = []
+
+    async def fake_dispatch(tag):
+        calls.append(tag)
+        return "0 events"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "what's on?"}],
+            system="sys",
+            task="voice",
+            max_steps=5,
+        )
+    )
+    assert len(calls) == 1  # second call short-circuited  # nosec B101
+    assert len(steps) == 1  # nosec B101
+    assert pending is None  # nosec B101
+    assert len(fake.responses) == 1  # third response never consumed  # nosec B101
