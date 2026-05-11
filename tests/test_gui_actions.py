@@ -272,6 +272,39 @@ def test_traverse_max_elements_no_marker_when_under_budget():
     assert not any("truncated" in line for line in lines)  # nosec B101
 
 
+def test_traverse_tier_b_root_respects_max_elements_cap():
+    """A tier-B root (e.g. AXWindow) with overflowing children must not
+    push the emit count past MAX_ELEMENTS by adding the parent line after
+    the budget is spent. Total emitted lines (excluding the marker) must
+    equal MAX_ELEMENTS exactly.
+    """
+    children = [{"role": "AXButton", "title": f"B{i}"} for i in range(300)]
+    tree = {"role": "AXWindow", "title": "BigWindow", "children": children}
+    lines = gui_actions._traverse(tree)
+    non_marker_lines = [line for line in lines if "truncated" not in line]
+    assert len(non_marker_lines) == gui_actions.MAX_ELEMENTS  # nosec B101
+    assert lines[0] == 'window "BigWindow"'  # nosec B101
+    # 300 buttons exist; 249 fit alongside the window parent. 51 skipped.
+    assert lines[-1] == "[... truncated, 51 more elements skipped]"  # nosec B101
+
+
+def test_traverse_tier_b_refunds_budget_when_no_descendant_emits():
+    """Tier-B that reserves a budget slot must refund it when its subtree
+    emits nothing, so siblings can still consume the freed slot.
+    """
+    tree = {
+        "role": "AXGroup",
+        "children": [
+            # First child: tier-B with no emitted descendants — should refund.
+            {"role": "AXToolbar", "children": [{"role": "AXGroup", "children": []}]},
+            # Second child: a labeled tier-A — should be able to emit.
+            {"role": "AXButton", "title": "Send"},
+        ],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == ['button "Send"'], lines  # nosec B101
+
+
 def test_is_accessibility_permitted_returns_true_when_trusted(monkeypatch):
     monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
     assert gui_actions.is_accessibility_permitted() is True  # nosec B101

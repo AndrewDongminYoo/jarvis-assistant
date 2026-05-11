@@ -169,14 +169,17 @@ def _traverse_inner(element: Any, depth: int, budget: list[int]) -> list[str]:
         return [line] + _walk_children(children, depth + 1, budget)
 
     if tier == "B":
-        # Recurse children first; only emit self if any child emitted.
+        # Reserve a budget slot for self BEFORE recursing children so the
+        # combined emit (parent + descendants) never exceeds MAX_ELEMENTS.
+        # If no descendant emits, refund the reservation and elide self.
+        budget[0] -= 1
         child_lines = _walk_children(children, depth + 1, budget)
         if child_lines:
             label = _label_for(element)
             enabled = _is_enabled(element)
             self_line = _format_element(role_name, label, None, enabled, depth)
-            budget[0] -= 1
             return [self_line] + child_lines
+        budget[0] += 1
         return []
 
     # Ignored role — pass through children at same depth.
