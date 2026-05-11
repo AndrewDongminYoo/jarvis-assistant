@@ -321,6 +321,47 @@ def _task_type(text: str) -> str:
     return "voice"
 
 
+async def _run_action_loop(
+    *,
+    messages: list[dict],
+    system: str,
+    task: str,
+    max_steps: int,
+) -> tuple[str, list[tuple[str, str]], "PendingAction | None"]:
+    """Run a bounded ReAct loop.
+
+    Returns (final_raw_from_last_call, executed_steps, pending_for_confirm).
+    Termination: (a) LLM returns no action tag, (b) max_steps reached.
+    Safety classification is wired in a later task — this version always
+    executes the action when a tag is present.
+    """
+    history = list(messages)
+    steps: list[tuple[str, str]] = []
+    raw = ""
+    for _ in range(max_steps):
+        raw = await _router.complete(
+            task=task,
+            messages=history,
+            system=system,
+            max_tokens=250,
+        )
+        m = ACTION_RE.search(raw)
+        if not m:
+            return raw, steps, None
+        tag = m.group(1)
+        try:
+            result = await dispatch_action(tag)
+        except Exception as e:  # noqa: BLE001
+            log.error("Action dispatch error: %s", e)
+            result = "Action failed."
+        steps.append((tag, result))
+        history = history + [
+            {"role": "assistant", "content": raw},
+            {"role": "user", "content": f"[SYSTEM RESULT]\n{result}"},
+        ]
+    return raw, steps, None
+
+
 async def handle_message(ws: WebSocket, text: str) -> None:
     await ws.send_json({"type": "thinking"})
     messages = _mem.get_recent()

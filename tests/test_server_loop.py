@@ -1,0 +1,88 @@
+import asyncio
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+import server  # noqa: E402
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+class FakeRouter:
+    """Returns scripted responses one at a time."""
+
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    async def complete(self, *, task, messages, system, max_tokens):
+        self.calls.append({"task": task, "messages": list(messages)})
+        return self.responses.pop(0)
+
+
+def test_action_loop_natural_termination_no_action_tag(monkeypatch):
+    fake = FakeRouter(["Just a chat reply."])
+    monkeypatch.setattr(server, "_router", fake)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "hi"}],
+            system="sys",
+            task="voice",
+            max_steps=1,
+        )
+    )
+    assert raw == "Just a chat reply."  # nosec B101
+    assert steps == []  # nosec B101
+    assert pending is None  # nosec B101
+
+
+def test_action_loop_runs_one_safe_action(monkeypatch):
+    fake = FakeRouter(["Checking. [ACTION:CALENDAR]"])
+    monkeypatch.setattr(server, "_router", fake)
+
+    async def fake_dispatch(tag):
+        assert tag == "CALENDAR"  # nosec B101
+        return "no events today"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "any meetings?"}],
+            system="sys",
+            task="voice",
+            max_steps=1,
+        )
+    )
+    assert pending is None  # nosec B101
+    assert steps == [("CALENDAR", "no events today")]  # nosec B101
+
+
+def test_action_loop_max_steps_one_stops_after_first_action(monkeypatch):
+    fake = FakeRouter(
+        [
+            "Step 1. [ACTION:CALENDAR]",
+            "Step 2. [ACTION:CALENDAR]",  # should NOT be reached at max_steps=1
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+
+    async def fake_dispatch(tag):
+        return "result"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "x"}],
+            system="sys",
+            task="voice",
+            max_steps=1,
+        )
+    )
+    assert len(steps) == 1  # nosec B101
+    assert len(fake.responses) == 1  # one unused — confirms loop stopped  # nosec B101
