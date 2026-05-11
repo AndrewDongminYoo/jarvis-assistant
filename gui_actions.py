@@ -12,6 +12,8 @@ patch the AX accessors).
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Any, Optional
 
 log = logging.getLogger("jarvis.gui")
@@ -20,11 +22,64 @@ MAX_ELEMENTS = 250
 MAX_DEPTH = 15
 APPLESCRIPT_TIMEOUT = 10
 
-PERMISSION_PROMPT = (
-    "JARVIS needs Accessibility permission. Open System Settings > "
-    "Privacy & Security > Accessibility and enable the terminal or app "
-    "that runs JARVIS."
-)
+
+def _ancestor_app_name(start_pid: Optional[int] = None) -> str:
+    """Best-effort detection of the macOS .app ancestor of this process.
+
+    Walks up the parent chain (bounded to 10 hops) looking for an ancestor
+    whose executable path contains '.app/'. Returns the bundle stem
+    (e.g. "Warp", "Visual Studio Code") or "" if no .app ancestor is
+    found or any subprocess call fails. The result is used to make the
+    Accessibility-permission prompt name the specific terminal app that
+    spawned JARVIS, rather than a generic phrase.
+    """
+    import subprocess
+
+    try:
+        pid = start_pid if start_pid is not None else os.getppid()
+        for _ in range(10):
+            if pid <= 1:
+                return ""
+            comm_r = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "comm="],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if comm_r.returncode != 0:
+                return ""
+            comm = comm_r.stdout.strip()
+            if ".app/" in comm:
+                bundle_path = comm.split(".app/", 1)[0] + ".app"
+                return Path(bundle_path).stem
+            ppid_r = subprocess.run(
+                ["ps", "-p", str(pid), "-o", "ppid="],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            if ppid_r.returncode != 0:
+                return ""
+            ppid_str = ppid_r.stdout.strip()
+            if not ppid_str.lstrip("-").isdigit():
+                return ""
+            pid = int(ppid_str)
+        return ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _permission_prompt() -> str:
+    """Compose the Accessibility-permission narrate string, including the
+    detected parent app name when available."""
+    app = _ancestor_app_name()
+    target = app if app else "the terminal or app that runs JARVIS"
+    return (
+        "JARVIS needs Accessibility permission. Open System Settings > "
+        f"Privacy & Security > Accessibility and enable {target}. "
+        "Then fully quit and relaunch it so the permission applies."
+    )
+
 
 _TIER_A_ROLES: dict[str, str] = {
     "AXButton": "button",
@@ -292,7 +347,7 @@ def focus_app(name: str) -> str:
     if not name or not name.strip():
         return "Missing app name."
     if not _ax_is_trusted():
-        return PERMISSION_PROMPT
+        return _permission_prompt()
     target = name.strip()
     lower = target.lower()
     for app in _running_apps():
@@ -329,7 +384,7 @@ def _frontmost_app() -> Optional[dict]:
 
 def observe_frontmost() -> str:
     if not _ax_is_trusted():
-        return PERMISSION_PROMPT
+        return _permission_prompt()
     try:
         info = _frontmost_app()
     except Exception as e:  # noqa: BLE001

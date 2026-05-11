@@ -410,3 +410,111 @@ def test_observe_returns_read_error_when_traversal_raises(monkeypatch):
     monkeypatch.setattr(gui_actions, "_frontmost_app", boom)
     out = gui_actions.observe_frontmost()
     assert "Couldn't read UI" in out  # nosec B101
+
+
+def _fake_ps_runner(chain):
+    """Build a fake subprocess.run that walks a PID → (comm, ppid) chain.
+
+    `chain` is a dict mapping pid (int) → (comm, ppid).
+    """
+    import subprocess as _subprocess
+
+    def fake_run(args, **kwargs):
+        # args = ["ps", "-p", str(pid), "-o", "comm="|"ppid="]
+        pid = int(args[2])
+        field = args[4]
+        node = chain.get(pid)
+        if node is None:
+            return _subprocess.CompletedProcess(
+                args, returncode=1, stdout="", stderr=""
+            )
+        comm, ppid = node
+        if field == "comm=":
+            return _subprocess.CompletedProcess(
+                args, returncode=0, stdout=f"{comm}\n", stderr=""
+            )
+        if field == "ppid=":
+            return _subprocess.CompletedProcess(
+                args, returncode=0, stdout=f"{ppid}\n", stderr=""
+            )
+        return _subprocess.CompletedProcess(args, returncode=1, stdout="", stderr="")
+
+    return fake_run
+
+
+def test_ancestor_app_name_detects_warp_directly(monkeypatch):
+    import subprocess
+
+    chain = {1234: ("/Applications/Warp.app/Contents/MacOS/stable", 1)}
+    monkeypatch.setattr(subprocess, "run", _fake_ps_runner(chain))
+    assert gui_actions._ancestor_app_name(start_pid=1234) == "Warp"  # nosec B101
+
+
+def test_ancestor_app_name_walks_up_through_shells(monkeypatch):
+    """Typical chain: python → uv → bash → -zsh → Warp.app/.../stable"""
+    import subprocess
+
+    chain = {
+        1000: ("uv", 1001),
+        1001: ("bash", 1002),
+        1002: ("-zsh", 1003),
+        1003: ("/Applications/Warp.app/Contents/MacOS/stable", 1),
+    }
+    monkeypatch.setattr(subprocess, "run", _fake_ps_runner(chain))
+    assert gui_actions._ancestor_app_name(start_pid=1000) == "Warp"  # nosec B101
+
+
+def test_ancestor_app_name_handles_vscode_helper(monkeypatch):
+    """VS Code integrated terminal runs under Code Helper inside the
+    Visual Studio Code.app bundle. We want the bundle name, not the helper.
+    """
+    import subprocess
+
+    chain = {
+        2000: (
+            "/Applications/Visual Studio Code.app/Contents/Frameworks/"
+            "Code Helper.app/Contents/MacOS/Code Helper",
+            1,
+        ),
+    }
+    monkeypatch.setattr(subprocess, "run", _fake_ps_runner(chain))
+    assert (  # nosec B101
+        gui_actions._ancestor_app_name(start_pid=2000) == "Visual Studio Code"
+    )
+
+
+def test_ancestor_app_name_returns_empty_when_no_app_ancestor(monkeypatch):
+    """Walk terminates at pid 1 without ever seeing a .app."""
+    import subprocess
+
+    chain = {
+        500: ("python", 501),
+        501: ("bash", 1),
+    }
+    monkeypatch.setattr(subprocess, "run", _fake_ps_runner(chain))
+    assert gui_actions._ancestor_app_name(start_pid=500) == ""  # nosec B101
+
+
+def test_ancestor_app_name_returns_empty_on_subprocess_failure(monkeypatch):
+    import subprocess
+
+    def boom(*args, **kwargs):
+        raise OSError("ps not available")
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    assert gui_actions._ancestor_app_name(start_pid=1234) == ""  # nosec B101
+
+
+def test_permission_prompt_includes_detected_app_name(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ancestor_app_name", lambda: "Warp")
+    msg = gui_actions._permission_prompt()
+    assert "Warp" in msg  # nosec B101
+    assert "Accessibility" in msg  # nosec B101
+    assert "relaunch" in msg.lower()  # nosec B101
+
+
+def test_permission_prompt_falls_back_when_app_unknown(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ancestor_app_name", lambda: "")
+    msg = gui_actions._permission_prompt()
+    assert "terminal" in msg.lower()  # nosec B101
+    assert "Accessibility" in msg  # nosec B101
