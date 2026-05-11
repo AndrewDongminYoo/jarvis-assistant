@@ -20,6 +20,12 @@ MAX_ELEMENTS = 250
 MAX_DEPTH = 15
 APPLESCRIPT_TIMEOUT = 10
 
+PERMISSION_PROMPT = (
+    "JARVIS needs Accessibility permission. Open System Settings > "
+    "Privacy & Security > Accessibility and enable the terminal or app "
+    "that runs JARVIS."
+)
+
 _TIER_A_ROLES: dict[str, str] = {
     "AXButton": "button",
     "AXLink": "link",
@@ -227,8 +233,74 @@ def is_accessibility_permitted() -> bool:
     return _ax_is_trusted()
 
 
+def _running_apps() -> list[dict]:
+    """Return [{name, pid}, ...] for every running app. Lazy pyobjc."""
+    from Cocoa import NSWorkspace  # type: ignore
+
+    workspace = NSWorkspace.sharedWorkspace()
+    out: list[dict] = []
+    for app in workspace.runningApplications():
+        name = app.localizedName()
+        pid = app.processIdentifier()
+        if name:
+            out.append({"name": str(name), "pid": int(pid)})
+    return out
+
+
+def _set_app_frontmost(pid: int) -> bool:
+    """Bring the app with this PID to the front via AX. Returns success."""
+    try:
+        from ApplicationServices import (  # type: ignore
+            AXUIElementCreateApplication,
+            AXUIElementSetAttributeValue,
+        )
+
+        app_element = AXUIElementCreateApplication(pid)
+        err = AXUIElementSetAttributeValue(app_element, "AXFrontmost", True)
+        return err == 0
+    except Exception as e:  # noqa: BLE001
+        log.warning("Failed to set frontmost via AX: %s", e)
+        return False
+
+
+def _applescript_activate(name: str) -> bool:
+    """Fallback: `tell app "<name>" to activate`. Returns success."""
+    import subprocess
+
+    escaped = name.replace('"', '\\"')
+    script = f'tell application "{escaped}" to activate'
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=APPLESCRIPT_TIMEOUT,
+        )
+        if r.returncode != 0:
+            log.warning("AppleScript activate failed: %s", r.stderr.strip())
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        log.warning("AppleScript activate timed out for %s", name)
+        return False
+
+
 def focus_app(name: str) -> str:
-    raise NotImplementedError
+    if not name or not name.strip():
+        return "Missing app name."
+    if not _ax_is_trusted():
+        return PERMISSION_PROMPT
+    target = name.strip()
+    lower = target.lower()
+    for app in _running_apps():
+        if lower in app["name"].lower():
+            if _set_app_frontmost(app["pid"]):
+                return f"Focused {app['name']}."
+            # AX failed even though we found the app — try AppleScript anyway.
+            break
+    if _applescript_activate(target):
+        return f"Focused {target}."
+    return f"Couldn't find an app matching '{target}'."
 
 
 def observe_frontmost() -> str:

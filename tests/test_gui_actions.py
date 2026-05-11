@@ -280,3 +280,55 @@ def test_is_accessibility_permitted_returns_true_when_trusted(monkeypatch):
 def test_is_accessibility_permitted_returns_false_when_not_trusted(monkeypatch):
     monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
     assert gui_actions.is_accessibility_permitted() is False  # nosec B101
+
+
+def test_focus_app_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    result = gui_actions.focus_app("Chrome")
+    assert "Accessibility" in result  # nosec B101
+
+
+def test_focus_app_substring_match_against_running_apps(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(
+        gui_actions,
+        "_running_apps",
+        lambda: [
+            {"name": "Finder", "pid": 100},
+            {"name": "Google Chrome", "pid": 200},
+            {"name": "Slack", "pid": 300},
+        ],
+    )
+    called = {}
+
+    def fake_set_frontmost(pid):
+        called["pid"] = pid
+        return True
+
+    monkeypatch.setattr(gui_actions, "_set_app_frontmost", fake_set_frontmost)
+    result = gui_actions.focus_app("chrome")  # case-insensitive
+    assert called["pid"] == 200  # nosec B101
+    assert "Focused" in result and "Google Chrome" in result  # nosec B101
+
+
+def test_focus_app_falls_back_to_applescript_when_no_running_match(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_running_apps", lambda: [])
+    monkeypatch.setattr(gui_actions, "_applescript_activate", lambda name: True)
+    result = gui_actions.focus_app("Mail")
+    assert "Focused" in result and "Mail" in result  # nosec B101
+
+
+def test_focus_app_returns_not_found_when_both_paths_fail(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_running_apps", lambda: [])
+    monkeypatch.setattr(gui_actions, "_applescript_activate", lambda name: False)
+    result = gui_actions.focus_app("Nonexistent")
+    assert "Couldn't" in result or "couldn't" in result  # nosec B101
+    assert "Nonexistent" in result  # nosec B101
+
+
+def test_focus_app_empty_name_returns_error(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.focus_app("")
+    assert "app name" in result.lower() or "missing" in result.lower()  # nosec B101
