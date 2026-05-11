@@ -270,3 +270,13 @@ def test_traverse_max_elements_no_marker_when_under_budget():
     lines = gui_actions._traverse(tree)
     assert len(lines) == 50  # nosec B101
     assert not any("truncated" in line for line in lines)  # nosec B101
+
+
+def test_is_accessibility_permitted_returns_true_when_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    assert gui_actions.is_accessibility_permitted() is True  # nosec B101
+
+
+def test_is_accessibility_permitted_returns_false_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    assert gui_actions.is_accessibility_permitted() is False  # nosec B101

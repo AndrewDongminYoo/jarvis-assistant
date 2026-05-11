@@ -214,8 +214,17 @@ def _count_inner(element: Any, depth: int) -> int:
     return sum(_count_inner(c, depth) for c in children)
 
 
+def _ax_is_trusted() -> bool:
+    """Production-only: returns True iff this process has Accessibility
+    permission. Tests monkeypatch this module-level function rather than
+    pyobjc."""
+    from ApplicationServices import AXIsProcessTrustedWithOptions  # type: ignore
+
+    return bool(AXIsProcessTrustedWithOptions(None))
+
+
 def is_accessibility_permitted() -> bool:
-    raise NotImplementedError
+    return _ax_is_trusted()
 
 
 def focus_app(name: str) -> str:
