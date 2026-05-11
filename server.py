@@ -379,7 +379,7 @@ async def _run_action_loop(
                 result = await dispatch_action(tag)
             except Exception as e:  # noqa: BLE001
                 log.error("Action dispatch error: %s", e)
-                result = "Action failed."
+                result = f"error: {e}"
         steps.append((tag, result))
         history = history + [
             {"role": "assistant", "content": raw},
@@ -401,7 +401,7 @@ async def handle_message(ws: WebSocket, text: str) -> None:
                 result = await dispatch_action(pending_existing.action)
             except Exception as e:  # noqa: BLE001
                 log.error("Confirmed action failed: %s", e)
-                result = "Action failed."
+                result = f"error: {e}"
             follow_msgs = pending_existing.history + [
                 {
                     "role": "user",
