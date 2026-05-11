@@ -6,6 +6,8 @@ import base64
 import logging
 import os
 import re
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +37,25 @@ SSL_KEY = Path("key.pem")
 
 _router = LLMRouter.from_env()
 _mem = Memory()
+
+
+# ---------------------------------------------------------------------------
+# Pending Actions
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PendingAction:
+    action: str
+    history: list[dict]
+    asked_at: float
+    expires_in: float = 30.0
+
+    def expired(self) -> bool:
+        return time.time() - self.asked_at > self.expires_in
+
+
+_pending: dict[str, PendingAction] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +159,7 @@ async def _send_audio_chunks(ws: WebSocket, audio: Optional[bytes]) -> None:
 # ---------------------------------------------------------------------------
 
 ACTION_RE = re.compile(r"\[ACTION:([^\]]+)\]")
+MAX_STEPS = 5
 
 
 async def dispatch_action(tag: str) -> str:
@@ -300,43 +322,159 @@ def _task_type(text: str) -> str:
     return "voice"
 
 
+def _format_confirm_prompt(raw: str, action: str) -> str:
+    prose = ACTION_RE.sub("", raw).strip()
+    if prose:
+        return f"{prose} 진행할까요? / Proceed? (yes/no)"
+    return f"Run action `{action}`? Say yes or no."
+
+
+def _ws_id(ws: WebSocket) -> str:
+    return f"{id(ws):x}"
+
+
+async def _run_action_loop(
+    *,
+    messages: list[dict],
+    system: str,
+    task: str,
+    max_steps: int,
+) -> tuple[str, list[tuple[str, str]], "PendingAction | None"]:
+    """Run a bounded ReAct loop.
+
+    Returns (final_raw_from_last_call, executed_steps, pending_for_confirm).
+    Termination: (a) LLM returns no action tag, (b) safety CONFIRM (pending
+    returned), (c) max_steps reached.
+    """
+    import safety  # local import to keep top-of-file lean
+
+    history = list(messages)
+    steps: list[tuple[str, str]] = []
+    raw = ""
+    for _ in range(max_steps):
+        raw = await _router.complete(
+            task=task,
+            messages=history,
+            system=system,
+            max_tokens=250,
+        )
+        m = ACTION_RE.search(raw)
+        if not m:
+            return raw, steps, None
+        tag = m.group(1)
+        if steps and steps[-1][0] == tag:
+            return raw, steps, None
+        decision = safety.classify(tag)
+        if decision is safety.Decision.CONFIRM:
+            pending = PendingAction(
+                action=tag,
+                history=history,
+                asked_at=time.time(),
+            )
+            return raw, steps, pending
+        if decision is safety.Decision.BLOCKED:
+            result = f"blocked: {safety.reason(tag)}"
+        else:
+            try:
+                result = await dispatch_action(tag)
+            except Exception as e:  # noqa: BLE001
+                log.error("Action dispatch error: %s", e)
+                result = f"error: {e}"
+        steps.append((tag, result))
+        history = history + [
+            {"role": "assistant", "content": raw},
+            {"role": "user", "content": f"[SYSTEM RESULT]\n{result}"},
+        ]
+    return raw, steps, None
+
+
 async def handle_message(ws: WebSocket, text: str) -> None:
     await ws.send_json({"type": "thinking"})
+
+    import safety  # local import
+
+    wsid = _ws_id(ws)
+    pending_existing = _pending.pop(wsid, None)
+    if pending_existing is not None and not pending_existing.expired():
+        # Negative-first: if the reply contains any cancel/stop token, cancel —
+        # even when an affirmative token is also present (e.g. "no go",
+        # "yes, cancel"). Erring toward cancellation is the safer default
+        # for risky-action confirmations.
+        if safety.is_negative(text):
+            spoken = "Cancelled. / 취소했어요."
+            _mem.add_exchange("user", text)
+            _mem.add_exchange("assistant", spoken)
+            await ws.send_json({"type": "text", "content": spoken})
+            audio = await synthesize(spoken)
+            await _send_audio_chunks(ws, audio)
+            await ws.send_json({"type": "done"})
+            return
+        if safety.is_affirmative(text):
+            try:
+                result = await dispatch_action(pending_existing.action)
+            except Exception as e:  # noqa: BLE001
+                log.error("Confirmed action failed: %s", e)
+                result = f"error: {e}"
+            follow_msgs = pending_existing.history + [
+                {
+                    "role": "user",
+                    "content": f"[SYSTEM RESULT]\n{result}\n\nNarrate in 1-2 sentences.",
+                },
+            ]
+            try:
+                spoken = await _router.complete(
+                    task="narrate",
+                    messages=follow_msgs,
+                    system=_build_system_prompt(),
+                    max_tokens=150,
+                )
+            except Exception:  # noqa: BLE001
+                spoken = result
+            _mem.add_exchange("user", text)
+            _mem.add_exchange("assistant", spoken)
+            await ws.send_json({"type": "text", "content": spoken})
+            audio = await synthesize(spoken)
+            await _send_audio_chunks(ws, audio)
+            await ws.send_json({"type": "done"})
+            return
+        # neither yes nor no — drop pending (already popped), fall through to normal handling
+
     messages = _mem.get_recent()
     messages.append({"role": "user", "content": text})
 
     try:
-        raw = await _router.complete(
-            task=_task_type(text),
+        raw, steps, pending = await _run_action_loop(
             messages=messages,
             system=_build_system_prompt(),
-            max_tokens=250,
+            task=_task_type(text),
+            max_steps=MAX_STEPS,
         )
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         log.error("LLM router error: %s", e)
         await ws.send_json({"type": "error", "message": "LLM provider error"})
         return
 
-    # Dispatch action tag if present
-    action_result = ""
-    m = ACTION_RE.search(raw)
-    if m:
-        try:
-            action_result = await dispatch_action(m.group(1))
-        except Exception as e:
-            log.error("Action dispatch error: %s", e)
-            action_result = "Action failed."
+    if pending is not None:
+        _pending[_ws_id(ws)] = pending
+        spoken = _format_confirm_prompt(raw, pending.action)
+        _mem.add_exchange("user", text)
+        _mem.add_exchange("assistant", spoken)
+        await ws.send_json({"type": "text", "content": spoken})
+        audio = await synthesize(spoken)
+        await _send_audio_chunks(ws, audio)
+        await ws.send_json({"type": "done"})
+        return
 
-    # Strip action tags for TTS
     spoken = ACTION_RE.sub("", raw).strip()
 
-    # Follow-up narration when action produced content
-    if action_result:
+    if steps:
         follow_msgs = list(messages) + [
             {"role": "assistant", "content": raw},
             {
                 "role": "user",
-                "content": f"[SYSTEM RESULT]\n{action_result}\n\nNarrate in 1-2 sentences.",
+                "content": (
+                    f"[SYSTEM RESULT]\n{steps[-1][1]}\n\n" "Narrate in 1-2 sentences."
+                ),
             },
         ]
         try:
@@ -346,8 +484,8 @@ async def handle_message(ws: WebSocket, text: str) -> None:
                 system=_build_system_prompt(),
                 max_tokens=150,
             )
-        except Exception:
-            spoken = action_result
+        except Exception:  # noqa: BLE001
+            spoken = steps[-1][1]
 
     _mem.add_exchange("user", text)
     _mem.add_exchange("assistant", spoken)
