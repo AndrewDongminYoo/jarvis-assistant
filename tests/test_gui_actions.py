@@ -332,3 +332,48 @@ def test_focus_app_empty_name_returns_error(monkeypatch):
     monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
     result = gui_actions.focus_app("")
     assert "app name" in result.lower() or "missing" in result.lower()  # nosec B101
+
+
+def test_observe_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    out = gui_actions.observe_frontmost()
+    assert "Accessibility" in out  # nosec B101
+
+
+def test_observe_returns_no_frontmost_message_when_none(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_frontmost_app", lambda: None)
+    out = gui_actions.observe_frontmost()
+    assert "No frontmost app" in out  # nosec B101
+
+
+def test_observe_returns_formatted_tree_for_fake_app(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {
+        "role": "AXWindow",
+        "title": "Inbox",
+        "children": [
+            {"role": "AXButton", "title": "New Message"},
+            {"role": "AXButton", "title": "Reply", "enabled": False},
+        ],
+    }
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    out = gui_actions.observe_frontmost()
+    assert 'window "Inbox"' in out  # nosec B101
+    assert '  button "New Message"' in out  # nosec B101
+    assert '  button "Reply" [disabled]' in out  # nosec B101
+
+
+def test_observe_returns_read_error_when_traversal_raises(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+
+    def boom():
+        raise RuntimeError("AX call failed")
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", boom)
+    out = gui_actions.observe_frontmost()
+    assert "Couldn't read UI" in out  # nosec B101

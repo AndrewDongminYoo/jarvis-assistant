@@ -303,5 +303,42 @@ def focus_app(name: str) -> str:
     return f"Couldn't find an app matching '{target}'."
 
 
+def _frontmost_app() -> Optional[dict]:
+    """Return {"name": <localized name>, "root": <AX root element>} or None.
+
+    The "root" is the AX element returned by AXUIElementCreateApplication
+    for the frontmost process; _traverse can walk it via _get_children.
+    Lazy pyobjc.
+    """
+    from ApplicationServices import AXUIElementCreateApplication  # type: ignore
+    from Cocoa import NSWorkspace  # type: ignore
+
+    workspace = NSWorkspace.sharedWorkspace()
+    app = workspace.frontmostApplication()
+    if app is None:
+        return None
+    name = app.localizedName()
+    pid = app.processIdentifier()
+    if not name or not pid:
+        return None
+    return {"name": str(name), "root": AXUIElementCreateApplication(int(pid))}
+
+
 def observe_frontmost() -> str:
-    raise NotImplementedError
+    if not _ax_is_trusted():
+        return PERMISSION_PROMPT
+    try:
+        info = _frontmost_app()
+    except Exception as e:  # noqa: BLE001
+        log.warning("frontmost app lookup failed: %s", e)
+        return "Couldn't read UI from the frontmost app."
+    if info is None:
+        return "No frontmost app — try 'focus <app name>' first."
+    try:
+        lines = _traverse(info["root"])
+    except Exception as e:  # noqa: BLE001
+        log.warning("AX traversal failed for %s: %s", info["name"], e)
+        return f"Couldn't read UI from {info['name']}."
+    if not lines:
+        return f"{info['name']} has no inspectable UI right now."
+    return "\n".join(lines)
