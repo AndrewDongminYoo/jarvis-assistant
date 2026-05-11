@@ -23,3 +23,9 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=9.0.3,<10.0.0"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not macos'"
+markers = [
+  "macos: live macOS-only integration tests requiring Accessibility permission",
+]
