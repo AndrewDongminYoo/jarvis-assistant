@@ -321,6 +321,17 @@ def _task_type(text: str) -> str:
     return "voice"
 
 
+def _format_confirm_prompt(raw: str, action: str) -> str:
+    prose = ACTION_RE.sub("", raw).strip()
+    if prose:
+        return f"{prose} 진행할까요? / Proceed? (yes/no)"
+    return f"Run action `{action}`? Say yes or no."
+
+
+def _ws_id(ws: WebSocket) -> str:
+    return f"{id(ws):x}"
+
+
 async def _run_action_loop(
     *,
     messages: list[dict],
@@ -331,10 +342,11 @@ async def _run_action_loop(
     """Run a bounded ReAct loop.
 
     Returns (final_raw_from_last_call, executed_steps, pending_for_confirm).
-    Termination: (a) LLM returns no action tag, (b) max_steps reached.
-    Safety classification is wired in a later task — this version always
-    executes the action when a tag is present.
+    Termination: (a) LLM returns no action tag, (b) safety CONFIRM (pending
+    returned), (c) max_steps reached.
     """
+    import safety  # local import to keep top-of-file lean
+
     history = list(messages)
     steps: list[tuple[str, str]] = []
     raw = ""
@@ -349,11 +361,22 @@ async def _run_action_loop(
         if not m:
             return raw, steps, None
         tag = m.group(1)
-        try:
-            result = await dispatch_action(tag)
-        except Exception as e:  # noqa: BLE001
-            log.error("Action dispatch error: %s", e)
-            result = "Action failed."
+        decision = safety.classify(tag)
+        if decision is safety.Decision.CONFIRM:
+            pending = PendingAction(
+                action=tag,
+                history=history,
+                asked_at=time.time(),
+            )
+            return raw, steps, pending
+        if decision is safety.Decision.BLOCKED:
+            result = f"blocked: {safety.reason(tag)}"
+        else:
+            try:
+                result = await dispatch_action(tag)
+            except Exception as e:  # noqa: BLE001
+                log.error("Action dispatch error: %s", e)
+                result = "Action failed."
         steps.append((tag, result))
         history = history + [
             {"role": "assistant", "content": raw},
@@ -377,6 +400,17 @@ async def handle_message(ws: WebSocket, text: str) -> None:
     except Exception as e:  # noqa: BLE001
         log.error("LLM router error: %s", e)
         await ws.send_json({"type": "error", "message": "LLM provider error"})
+        return
+
+    if pending is not None:
+        _pending[_ws_id(ws)] = pending
+        spoken = _format_confirm_prompt(raw, pending.action)
+        _mem.add_exchange("user", text)
+        _mem.add_exchange("assistant", spoken)
+        await ws.send_json({"type": "text", "content": spoken})
+        audio = await synthesize(spoken)
+        await _send_audio_chunks(ws, audio)
+        await ws.send_json({"type": "done"})
         return
 
     spoken = ACTION_RE.sub("", raw).strip()

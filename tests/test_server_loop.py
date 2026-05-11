@@ -119,3 +119,86 @@ def test_handle_message_dispatches_safe_action(monkeypatch):
     assert types[-1] == "done"  # nosec B101
     text_msg = next(m for m in ws.sent if m["type"] == "text")
     assert "No events today" in text_msg["content"]  # nosec B101
+
+
+def test_action_loop_confirm_returns_pending(monkeypatch):
+    fake = FakeRouter(["Sending. [ACTION:MAIL:SEND:a@b.com::hi]"])
+    monkeypatch.setattr(server, "_router", fake)
+
+    async def must_not_be_called(tag):
+        raise AssertionError(f"dispatch should not run for CONFIRM, got {tag}")
+
+    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "send mail to a"}],
+            system="sys",
+            task="voice",
+            max_steps=1,
+        )
+    )
+    assert pending is not None  # nosec B101
+    assert pending.action == "MAIL:SEND:a@b.com::hi"  # nosec B101
+    assert steps == []  # nosec B101
+
+
+def test_action_loop_blocked_records_step_and_continues(monkeypatch):
+    fake = FakeRouter(
+        [
+            "Running. [ACTION:TERMINAL:sudo rm -rf /]",
+            "I'll stop here.",
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+
+    async def must_not_be_called(tag):
+        raise AssertionError("dispatch should not run for BLOCKED")
+
+    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "wipe disk"}],
+            system="sys",
+            task="voice",
+            max_steps=2,
+        )
+    )
+    assert pending is None  # nosec B101
+    assert len(steps) == 1  # nosec B101
+    assert steps[0][0] == "TERMINAL:sudo rm -rf /"  # nosec B101
+    assert "blocked" in steps[0][1].lower()  # nosec B101
+
+
+def test_handle_message_confirm_emits_pending_and_no_dispatch(monkeypatch):
+    fake_router = FakeRouter(["Sending. [ACTION:MAIL:SEND:a@b.com::hi]"])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def must_not_be_called(_):
+        raise AssertionError("dispatch must not run for CONFIRM")
+
+    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    server._pending.clear()
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    run(server.handle_message(ws, "send mail to a"))
+
+    assert len(server._pending) == 1  # nosec B101
+    text_msg = next(m for m in ws.sent if m["type"] == "text")
+    assert (
+        "?" in text_msg["content"] or "proceed" in text_msg["content"].lower()
+    )  # nosec B101
