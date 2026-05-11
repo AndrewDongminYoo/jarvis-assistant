@@ -103,12 +103,16 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:WORK:task]                     — dispatch to Claude Code
   [ACTION:PLAN:description]              — start a planning session with clarifying questions
   [ACTION:PLAN_ANSWER:task::answers]     — produce the numbered plan once user has answered
+  [ACTION:UI:FOCUS:app_name]             — activate an app (Chrome, Slack, Mail…)
+  [ACTION:UI:OBSERVE]                    — read the frontmost app's UI
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
   [ACTION:RECALL:query]                  — search prior conversation
   [ACTION:TASK:CREATE:title]             — add a pending task
   [ACTION:TASK:LIST]                     — list pending tasks
   [ACTION:TASK:DONE:task_id]             — mark a task as done
+
+Prefer UI:OBSERVE before acting on UI. The click target's role/label come from the OBSERVE output's vocabulary.
 {facts_block}
 """
 
@@ -303,6 +307,19 @@ async def dispatch_action(tag: str) -> str:
             return (
                 f"Task #{task_id} marked done." if ok else f"Task #{task_id} not found."
             )
+
+    if kind == "UI":
+        sub = parts[1].upper() if len(parts) > 1 else ""
+        if sub == "FOCUS":
+            from gui_actions import focus_app
+
+            target = parts[2] if len(parts) > 2 else ""
+            return await asyncio.to_thread(focus_app, target)
+        if sub == "OBSERVE":
+            from gui_actions import observe_frontmost
+
+            return await asyncio.to_thread(observe_frontmost)
+        return f"Unknown UI action: {sub}"
 
     return f"Unknown action: {kind}"
 
