@@ -147,3 +147,64 @@ def test_format_element_no_label_emits_bare_role():
 def test_format_element_no_label_with_disabled():
     line = gui_actions._format_element("toolbar", None, None, False, 1)
     assert line == "  toolbar [disabled]"  # nosec B101
+
+
+def test_traverse_single_button():
+    tree = {"role": "AXButton", "title": "Send"}
+    lines = gui_actions._traverse(tree)
+    assert lines == ['button "Send"']  # nosec B101
+
+
+def test_traverse_tier_a_without_label_drops_self_keeps_walk():
+    # AXButton with no label is treated like an ignored role: drop self,
+    # recurse children at same depth.
+    tree = {
+        "role": "AXButton",
+        "title": "",
+        "children": [{"role": "AXStaticText", "title": "Send"}],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == ['text "Send"']  # nosec B101
+
+
+def test_traverse_ignored_role_passes_through_at_same_depth():
+    tree = {
+        "role": "AXGroup",
+        "children": [
+            {"role": "AXButton", "title": "A"},
+            {"role": "AXButton", "title": "B"},
+        ],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == ['button "A"', 'button "B"']  # nosec B101
+
+
+def test_traverse_disabled_flag():
+    tree = {"role": "AXButton", "title": "Reply All", "enabled": False}
+    lines = gui_actions._traverse(tree)
+    assert lines == ['button "Reply All" [disabled]']  # nosec B101
+
+
+def test_traverse_text_field_with_value():
+    tree = {"role": "AXTextField", "title": "Search", "value": "asyncio"}
+    lines = gui_actions._traverse(tree)
+    assert lines == ['text_field "Search" "asyncio"']  # nosec B101
+
+
+def test_traverse_text_field_value_only_uses_value_as_label():
+    # No title; value becomes the label via _label_for. No duplicate.
+    tree = {"role": "AXTextField", "value": "hello"}
+    lines = gui_actions._traverse(tree)
+    assert lines == ['text_field "hello"']  # nosec B101
+
+
+def test_traverse_nested_tier_a_indents_one_per_level():
+    # Two tier-A elements stacked (the second nested inside the first).
+    # _traverse handles tier-A with tier-A children by indenting children.
+    tree = {
+        "role": "AXRow",
+        "title": "Anna",
+        "children": [{"role": "AXStaticText", "title": "Lunch tomorrow?"}],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == ['row "Anna"', '  text "Lunch tomorrow?"']  # nosec B101

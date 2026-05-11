@@ -125,6 +125,47 @@ def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
     return None, None
 
 
+def _traverse(element: Any, depth: int = 0) -> list[str]:
+    """Walk an AX subtree and emit pruned, indented lines.
+
+    Tier-A roles (Button, Link, TextField, etc.) emit a line when they have
+    a label; their children recurse at depth+1. Tier-B roles (Window,
+    Toolbar, etc.) are added in a later task — for now they behave like
+    ignored roles. Ignored roles (Group, ScrollArea, etc.) and tier-A
+    without a label both pass through to children at the same depth.
+    """
+    role_name, tier = _normalize_role(_get_role(element))
+    children = _get_children(element)
+
+    if tier == "A":
+        label = _label_for(element)
+        if label is None:
+            # No label — drop self, recurse children at same depth.
+            return _walk_children(children, depth)
+        # AXValue is already the label when title was empty; only include
+        # value as a separate field for text inputs whose title and value
+        # are distinct (e.g. a "Search" field with current text).
+        value = None
+        if role_name in ("text_field", "text_area"):
+            raw_value = _get_attribute(element, "AXValue")
+            if raw_value and raw_value.strip() and raw_value.strip() != label:
+                value = raw_value.strip()
+        enabled = _is_enabled(element)
+        line = _format_element(role_name, label, value, enabled, depth)
+        return [line] + _walk_children(children, depth + 1)
+
+    # Tier B + ignored: behave like ignored (pass-through). Tier B's
+    # deferred-emit semantics land in Task 6.
+    return _walk_children(children, depth)
+
+
+def _walk_children(children: list, depth: int) -> list[str]:
+    out: list[str] = []
+    for child in children:
+        out.extend(_traverse(child, depth))
+    return out
+
+
 def is_accessibility_permitted() -> bool:
     raise NotImplementedError
 
