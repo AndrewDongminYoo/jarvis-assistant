@@ -208,3 +208,65 @@ def test_traverse_nested_tier_a_indents_one_per_level():
     }
     lines = gui_actions._traverse(tree)
     assert lines == ['row "Anna"', '  text "Lunch tomorrow?"']  # nosec B101
+
+
+def test_traverse_tier_b_emits_when_descendant_emits():
+    tree = {
+        "role": "AXWindow",
+        "title": "Inbox",
+        "children": [{"role": "AXButton", "title": "New Message"}],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == ['window "Inbox"', '  button "New Message"']  # nosec B101
+
+
+def test_traverse_tier_b_elided_when_no_descendant_emits():
+    tree = {
+        "role": "AXToolbar",
+        "children": [{"role": "AXGroup", "children": []}],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == []  # nosec B101
+
+
+def test_traverse_tier_b_without_label_emits_bare_role():
+    tree = {
+        "role": "AXToolbar",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    lines = gui_actions._traverse(tree)
+    assert lines == ["toolbar", '  button "Send"']  # nosec B101
+
+
+def test_traverse_max_depth_cap():
+    # 20 nested AXButtons; MAX_DEPTH=15 means only depths 0..15 (16 lines).
+    leaf = {"role": "AXButton", "title": "L20"}
+    tree = leaf
+    for i in range(19, -1, -1):
+        tree = {"role": "AXButton", "title": f"L{i}", "children": [tree]}
+    lines = gui_actions._traverse(tree)
+    # Lines emit at depth 0..15 → 16 elements
+    assert len(lines) == 16  # nosec B101
+    assert lines[0] == 'button "L0"'  # nosec B101
+    assert lines[15] == ("  " * 15) + 'button "L15"'  # nosec B101
+
+
+def test_traverse_max_elements_truncates_with_marker():
+    # 300 sibling buttons; MAX_ELEMENTS=250 means 250 lines + 1 marker.
+    children = [{"role": "AXButton", "title": f"B{i}"} for i in range(300)]
+    tree = {"role": "AXGroup", "children": children}
+    lines = gui_actions._traverse(tree)
+    assert len(lines) == 251  # 250 + truncation marker  # nosec B101
+    assert lines[0] == 'button "B0"'  # nosec B101
+    assert lines[249] == 'button "B249"'  # nosec B101
+    assert lines[250] == "[... truncated, 50 more elements skipped]"  # nosec B101
+
+
+def test_traverse_max_elements_no_marker_when_under_budget():
+    tree = {
+        "role": "AXGroup",
+        "children": [{"role": "AXButton", "title": f"B{i}"} for i in range(50)],
+    }
+    lines = gui_actions._traverse(tree)
+    assert len(lines) == 50  # nosec B101
+    assert not any("truncated" in line for line in lines)  # nosec B101

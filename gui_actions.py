@@ -128,23 +128,30 @@ def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
 def _traverse(element: Any, depth: int = 0) -> list[str]:
     """Walk an AX subtree and emit pruned, indented lines.
 
-    Tier-A roles (Button, Link, TextField, etc.) emit a line when they have
-    a label; their children recurse at depth+1. Tier-B roles (Window,
-    Toolbar, etc.) are added in a later task — for now they behave like
-    ignored roles. Ignored roles (Group, ScrollArea, etc.) and tier-A
-    without a label both pass through to children at the same depth.
+    Termination: any of (a) depth > MAX_DEPTH, (b) emitted-line budget
+    exhausted, (c) walk completes. When the budget runs out, the count of
+    additional qualifying elements is appended as a truncation marker.
     """
+    budget = [MAX_ELEMENTS]
+    lines = _traverse_inner(element, depth, budget)
+    if budget[0] <= 0:
+        skipped = _count_remaining(element, depth, MAX_ELEMENTS)
+        if skipped > 0:
+            lines.append(f"[... truncated, {skipped} more elements skipped]")
+    return lines
+
+
+def _traverse_inner(element: Any, depth: int, budget: list[int]) -> list[str]:
+    if depth > MAX_DEPTH or budget[0] <= 0:
+        return []
+
     role_name, tier = _normalize_role(_get_role(element))
     children = _get_children(element)
 
     if tier == "A":
         label = _label_for(element)
         if label is None:
-            # No label — drop self, recurse children at same depth.
-            return _walk_children(children, depth)
-        # AXValue is already the label when title was empty; only include
-        # value as a separate field for text inputs whose title and value
-        # are distinct (e.g. a "Search" field with current text).
+            return _walk_children(children, depth, budget)
         value = None
         if role_name in ("text_field", "text_area"):
             raw_value = _get_attribute(element, "AXValue")
@@ -152,18 +159,59 @@ def _traverse(element: Any, depth: int = 0) -> list[str]:
                 value = raw_value.strip()
         enabled = _is_enabled(element)
         line = _format_element(role_name, label, value, enabled, depth)
-        return [line] + _walk_children(children, depth + 1)
+        budget[0] -= 1
+        return [line] + _walk_children(children, depth + 1, budget)
 
-    # Tier B + ignored: behave like ignored (pass-through). Tier B's
-    # deferred-emit semantics land in Task 6.
-    return _walk_children(children, depth)
+    if tier == "B":
+        # Recurse children first; only emit self if any child emitted.
+        child_lines = _walk_children(children, depth + 1, budget)
+        if child_lines:
+            label = _label_for(element)
+            enabled = _is_enabled(element)
+            self_line = _format_element(role_name, label, None, enabled, depth)
+            budget[0] -= 1
+            return [self_line] + child_lines
+        return []
+
+    # Ignored role — pass through children at same depth.
+    return _walk_children(children, depth, budget)
 
 
-def _walk_children(children: list, depth: int) -> list[str]:
+def _walk_children(children: list, depth: int, budget: list[int]) -> list[str]:
     out: list[str] = []
     for child in children:
-        out.extend(_traverse(child, depth))
+        if budget[0] <= 0:
+            break
+        out.extend(_traverse_inner(child, depth, budget))
     return out
+
+
+def _count_remaining(element: Any, depth: int, emitted_so_far: int) -> int:
+    """Count emittable elements in the full tree, return excess past budget.
+
+    Second pass: how many lines would have emitted if MAX_ELEMENTS were
+    unlimited. The number returned is the excess only (full count minus the
+    budget already spent).
+    """
+    total = _count_inner(element, depth)
+    return max(total - emitted_so_far, 0)
+
+
+def _count_inner(element: Any, depth: int) -> int:
+    """Mirror of _traverse_inner's tier handling, but counting only."""
+    if depth > MAX_DEPTH:
+        return 0
+    _role_name, tier = _normalize_role(_get_role(element))
+    children = _get_children(element)
+    if tier == "A":
+        label = _label_for(element)
+        if label is None:
+            return sum(_count_inner(c, depth) for c in children)
+        return 1 + sum(_count_inner(c, depth + 1) for c in children)
+    if tier == "B":
+        child_count = sum(_count_inner(c, depth + 1) for c in children)
+        return (1 + child_count) if child_count > 0 else 0
+    return sum(_count_inner(c, depth) for c in children)
 
 
 def is_accessibility_permitted() -> bool:
