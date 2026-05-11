@@ -316,3 +316,34 @@ def test_handle_message_pending_expired_falls_through(monkeypatch):
     assert server._pending == {}  # nosec B101
     text_msg = next(m for m in ws.sent if m["type"] == "text")
     assert "Just chatting" in text_msg["content"]  # nosec B101
+
+
+def test_action_loop_runs_two_safe_steps(monkeypatch):
+    fake = FakeRouter(
+        [
+            "Focusing. [ACTION:UI:FOCUS:Chrome]",
+            "Searching. [ACTION:SEARCH:python asyncio]",
+            "Found docs about asyncio.",
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+
+    async def fake_dispatch(tag):
+        return f"ran {tag}"
+
+    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "look up asyncio"}],
+            system="sys",
+            task="voice",
+            max_steps=5,
+        )
+    )
+    assert pending is None  # nosec B101
+    assert [s[0] for s in steps] == [
+        "UI:FOCUS:Chrome",
+        "SEARCH:python asyncio",
+    ]  # nosec B101
+    assert raw == "Found docs about asyncio."  # nosec B101
