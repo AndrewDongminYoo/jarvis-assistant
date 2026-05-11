@@ -7,6 +7,7 @@ docs/specs/2026-05-11-general-agent-design.md for rationale.
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 
 
@@ -59,11 +60,15 @@ def is_affirmative(text: str) -> bool:
     norm = _normalize(text)
     if not norm:
         return False
-    return any(token in norm for token in _AFFIRMATIVE_TOKENS)
+    return any(
+        re.search(rf"\b{re.escape(token)}\b", norm) for token in _AFFIRMATIVE_TOKENS
+    )
 
 
 def is_negative(text: str) -> bool:
     norm = _normalize(text)
     if not norm:
         return False
-    return any(token in norm for token in _NEGATIVE_TOKENS)
+    return any(
+        re.search(rf"\b{re.escape(token)}\b", norm) for token in _NEGATIVE_TOKENS
+    )

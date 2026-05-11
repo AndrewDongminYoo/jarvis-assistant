@@ -10,13 +10,19 @@ def test_decision_enum_has_three_members():
     assert {d.name for d in Decision} == {"SAFE", "CONFIRM", "BLOCKED"}  # nosec B101
 
 
+def test_decision_enum_values():
+    assert Decision.SAFE.value == "safe"  # nosec B101
+    assert Decision.CONFIRM.value == "confirm"  # nosec B101
+    assert Decision.BLOCKED.value == "blocked"  # nosec B101
+
+
 def test_is_affirmative_english_tokens():
     for text in ("yes", "Yeah", "ok", "okay", "sure", "go ahead", "do it"):
         assert is_affirmative(text) is True, text  # nosec B101
 
 
 def test_is_affirmative_korean_tokens():
-    for text in ("응", "그래", "해줘", "맞아", "좋아"):
+    for text in ("응", "그래", "해", "해줘", "맞아", "좋아"):
         assert is_affirmative(text) is True, text  # nosec B101
 
 
@@ -37,4 +43,14 @@ def test_is_negative_korean_tokens():
 
 def test_is_negative_rejects_others():
     for text in ("", "yes", "sure", "응", "go"):
+        assert is_negative(text) is False, text  # nosec B101
+
+
+def test_is_affirmative_rejects_substring_false_positives():
+    for text in ("going home", "tokyo", "cookbook", "그래도", "고고"):
+        assert is_affirmative(text) is False, text  # nosec B101
+
+
+def test_is_negative_rejects_substring_false_positives():
+    for text in ("I cannot do that", "you know it", "innovation"):
         assert is_negative(text) is False, text  # nosec B101
