@@ -104,7 +104,7 @@ _RISKY_CLICK_LABELS = (
 _BLOCKED_TERMINAL_PATTERNS = (
     re.compile(r"\bsudo\b"),
     re.compile(r"\brm\s+-rf\b"),
-    re.compile(r"^\s*:\(\)\s*\{"),  # fork bomb
+    re.compile(r"\s*:\(\)\s*\{"),  # fork bomb
     re.compile(r"curl[^|]*\|\s*(sh|bash|zsh)\b"),
     re.compile(r"wget[^|]*\|\s*(sh|bash|zsh)\b"),
     re.compile(r">\s*/(etc|System|usr|bin|sbin)/"),
@@ -160,10 +160,10 @@ def classify(action: str) -> Decision:
             return Decision.SAFE
         if sub_u == "CLICK":
             _role, _sep, label = rest.partition("::")
-            ll = label.lower()
+            label_lower = label.lower()
             return (
                 Decision.CONFIRM
-                if any(r in ll for r in _RISKY_CLICK_LABELS)
+                if any(r in label_lower for r in _RISKY_CLICK_LABELS)
                 else Decision.SAFE
             )
         if sub_u in {"TYPE", "KEY"}:
@@ -177,7 +177,9 @@ def classify(action: str) -> Decision:
 
     if kind == "COMPUTER":
         goal = payload.lower()
-        if any(k in goal for k in _BLOCKED_COMPUTER_KEYWORDS):
+        if any(
+            re.search(rf"\b{re.escape(k)}\b", goal) for k in _BLOCKED_COMPUTER_KEYWORDS
+        ):
             return Decision.BLOCKED
         return Decision.CONFIRM
 
@@ -196,6 +198,6 @@ def reason(action: str) -> str:
     if kind == "COMPUTER":
         low = payload.lower()
         for k in _BLOCKED_COMPUTER_KEYWORDS:
-            if k in low:
+            if re.search(rf"\b{re.escape(k)}\b", low):
                 return f"payment or credentials keyword: {k}"
     return f"unrecognized or unsafe action: {action}"

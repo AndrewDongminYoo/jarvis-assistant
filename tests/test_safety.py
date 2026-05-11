@@ -3,7 +3,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from safety import Decision, is_affirmative, is_negative  # noqa: E402
+from safety import (  # noqa: E402
+    Decision,
+    classify,
+    is_affirmative,
+    is_negative,
+    reason,
+)
 
 
 def test_decision_enum_has_three_members():
@@ -54,9 +60,6 @@ def test_is_affirmative_rejects_substring_false_positives():
 def test_is_negative_rejects_substring_false_positives():
     for text in ("I cannot do that", "you know it", "innovation"):
         assert is_negative(text) is False, text  # nosec B101
-
-
-from safety import classify, reason  # noqa: E402
 
 
 def test_classify_safe_read_kinds():
@@ -152,3 +155,21 @@ def test_reason_mentions_terminal_pattern():
 def test_reason_mentions_payment_keyword():
     msg = reason("COMPUTER:송금 100만원")
     assert "송금" in msg or "payment" in msg.lower(), msg  # nosec B101
+
+
+def test_classify_computer_rejects_pay_substring_false_positive():
+    assert classify("COMPUTER:open airpay app") is Decision.CONFIRM  # nosec B101
+    assert classify("COMPUTER:check repay schedule") is Decision.CONFIRM  # nosec B101
+
+
+def test_classify_computer_keeps_blocking_real_payments():
+    # word-boundary matching should still catch genuine payment intent
+    assert classify("COMPUTER:pay invoice") is Decision.BLOCKED  # nosec B101
+    assert classify("COMPUTER:make a payment") is Decision.BLOCKED  # nosec B101
+    assert (
+        classify("COMPUTER:transfer 100 to bank account") is Decision.BLOCKED
+    )  # nosec B101
+
+
+def test_classify_terminal_detects_fork_bomb_mid_command():
+    assert classify("TERMINAL:echo hi; :(){ :|:& };:") is Decision.BLOCKED  # nosec B101
