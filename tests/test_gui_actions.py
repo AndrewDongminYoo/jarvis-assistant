@@ -792,3 +792,63 @@ def test_parse_key_spec_unknown_named_key_returns_none():
 def test_parse_key_spec_empty_string_returns_none():
     char, code, mods = gui_actions._parse_key_spec("")
     assert char is None and code is None  # nosec B101
+
+
+def test_send_key_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    assert "Accessibility" in gui_actions.send_key("cmd+t")  # nosec B101
+
+
+def test_send_key_rejects_unparseable_spec(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.send_key("hyper+t")
+    assert "parse" in result.lower() or "couldn't" in result.lower()  # nosec B101
+
+
+def test_send_key_character_with_modifiers(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    result = gui_actions.send_key("shift+cmd+a")
+    assert sent["action"] == (
+        'keystroke "a" using {shift down, command down}'
+    )  # nosec B101
+    assert "Sent" in result and "shift+cmd+a" in result  # nosec B101
+
+
+def test_send_key_character_without_modifiers(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    gui_actions.send_key("a")
+    assert sent["action"] == 'keystroke "a"'  # nosec B101
+
+
+def test_send_key_named_key_uses_key_code(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    gui_actions.send_key("cmd+return")
+    assert sent["action"] == "key code 36 using {command down}"  # nosec B101
+
+
+def test_send_key_reports_failure_when_run_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_run_system_events", lambda _a: False)
+    result = gui_actions.send_key("cmd+t")
+    assert "Couldn't" in result  # nosec B101

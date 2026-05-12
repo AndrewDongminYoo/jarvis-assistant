@@ -550,6 +550,22 @@ def _parse_key_spec(
     return None, None, []
 
 
+def send_key(spec: str) -> str:
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    character, key_code, modifiers = _parse_key_spec(spec)
+    if character is None and key_code is None:
+        return f"Couldn't parse key spec '{spec}'."
+    mod_clause = " using {" + ", ".join(modifiers) + "}" if modifiers else ""
+    if character is not None:
+        action = f'keystroke "{character}"' + mod_clause
+    else:
+        action = f"key code {key_code}" + mod_clause
+    if _run_system_events(action):
+        return f"Sent {spec}."
+    return f"Couldn't send {spec}."
+
+
 def type_text(text: str) -> str:
     if not text:
         return "Missing text to type."
