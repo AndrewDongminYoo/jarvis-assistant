@@ -710,3 +710,85 @@ def test_type_text_reports_failure_when_run_returns_false(monkeypatch):
     monkeypatch.setattr(gui_actions, "_run_system_events", lambda _a: False)
     result = gui_actions.type_text("hello")
     assert "Couldn't" in result  # nosec B101
+
+
+def test_parse_key_spec_single_character():
+    char, code, mods = gui_actions._parse_key_spec("t")
+    assert char == "t"  # nosec B101
+    assert code is None  # nosec B101
+    assert mods == []  # nosec B101
+
+
+def test_parse_key_spec_single_modifier_plus_char():
+    char, code, mods = gui_actions._parse_key_spec("cmd+t")
+    assert char == "t"  # nosec B101
+    assert code is None  # nosec B101
+    assert mods == ["command down"]  # nosec B101
+
+
+def test_parse_key_spec_multiple_modifiers_in_order():
+    char, code, mods = gui_actions._parse_key_spec("shift+cmd+a")
+    assert char == "a"  # nosec B101
+    assert mods == ["shift down", "command down"]  # nosec B101
+
+
+def test_parse_key_spec_modifier_aliases():
+    _c1, _k1, m1 = gui_actions._parse_key_spec("command+t")
+    _c2, _k2, m2 = gui_actions._parse_key_spec("option+t")
+    _c3, _k3, m3 = gui_actions._parse_key_spec("opt+t")
+    _c4, _k4, m4 = gui_actions._parse_key_spec("control+t")
+    assert m1 == ["command down"]  # nosec B101
+    assert m2 == ["option down"]  # nosec B101
+    assert m3 == ["option down"]  # nosec B101
+    assert m4 == ["control down"]  # nosec B101
+
+
+def test_parse_key_spec_named_keys():
+    cases = {
+        "return": 36,
+        "enter": 36,
+        "tab": 48,
+        "space": 49,
+        "esc": 53,
+        "escape": 53,
+        "delete": 51,
+        "backspace": 51,
+        "up": 126,
+        "down": 125,
+        "left": 123,
+        "right": 124,
+    }
+    for spec, expected_code in cases.items():
+        char, code, mods = gui_actions._parse_key_spec(spec)
+        assert char is None, spec  # nosec B101
+        assert code == expected_code, spec  # nosec B101
+        assert mods == [], spec  # nosec B101
+
+
+def test_parse_key_spec_named_key_with_modifier():
+    char, code, mods = gui_actions._parse_key_spec("cmd+return")
+    assert char is None  # nosec B101
+    assert code == 36  # nosec B101
+    assert mods == ["command down"]  # nosec B101
+
+
+def test_parse_key_spec_case_insensitive():
+    char, code, mods = gui_actions._parse_key_spec("CMD+T")
+    assert char == "t"  # nosec B101
+    assert mods == ["command down"]  # nosec B101
+
+
+def test_parse_key_spec_unknown_modifier_returns_none():
+    char, code, mods = gui_actions._parse_key_spec("hyper+t")
+    assert char is None and code is None  # nosec B101
+    assert mods == []  # nosec B101
+
+
+def test_parse_key_spec_unknown_named_key_returns_none():
+    char, code, mods = gui_actions._parse_key_spec("foobar")
+    assert char is None and code is None  # nosec B101
+
+
+def test_parse_key_spec_empty_string_returns_none():
+    char, code, mods = gui_actions._parse_key_spec("")
+    assert char is None and code is None  # nosec B101

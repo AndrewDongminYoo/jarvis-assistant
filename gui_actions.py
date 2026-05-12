@@ -493,6 +493,63 @@ def _escape_applescript_string(text: str) -> str:
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
+_MODIFIER_ALIASES: dict[str, str] = {
+    "cmd": "command down",
+    "command": "command down",
+    "shift": "shift down",
+    "alt": "option down",
+    "opt": "option down",
+    "option": "option down",
+    "ctrl": "control down",
+    "control": "control down",
+    "fn": "function down",
+}
+
+_NAMED_KEY_CODES: dict[str, int] = {
+    "return": 36,
+    "enter": 36,
+    "tab": 48,
+    "space": 49,
+    "esc": 53,
+    "escape": 53,
+    "delete": 51,
+    "backspace": 51,
+    "up": 126,
+    "down": 125,
+    "left": 123,
+    "right": 124,
+}
+
+
+def _parse_key_spec(
+    spec: str,
+) -> tuple[Optional[str], Optional[int], list[str]]:
+    """Parse a key combo like 'cmd+t' or 'shift+cmd+return'.
+
+    Returns (character, key_code, modifiers). Exactly one of character or
+    key_code is non-None on success. modifiers is a list of AppleScript
+    modifier phrases ('command down', 'shift down', …) in the order given.
+    On parse failure all three are (None, None, []).
+    """
+    if not spec or not spec.strip():
+        return None, None, []
+    parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
+    if not parts:
+        return None, None, []
+    *mod_parts, key_part = parts
+    modifiers: list[str] = []
+    for m in mod_parts:
+        phrase = _MODIFIER_ALIASES.get(m)
+        if phrase is None:
+            return None, None, []
+        modifiers.append(phrase)
+    if key_part in _NAMED_KEY_CODES:
+        return None, _NAMED_KEY_CODES[key_part], modifiers
+    if len(key_part) == 1:
+        return key_part, None, modifiers
+    return None, None, []
+
+
 def type_text(text: str) -> str:
     if not text:
         return "Missing text to type."
