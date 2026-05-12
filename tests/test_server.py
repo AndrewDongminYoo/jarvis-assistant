@@ -180,6 +180,44 @@ def test_dispatch_plan_answer_rejects_missing_separator(monkeypatch):
     assert "::" in result  # nosec B101
 
 
+def test_dispatch_action_routes_ui_focus(monkeypatch):
+    import gui_actions
+
+    called = {}
+
+    def fake_focus(name):
+        called["name"] = name
+        return "Focused Chrome."
+
+    monkeypatch.setattr(gui_actions, "focus_app", fake_focus)
+    result = run(server.dispatch_action("UI:FOCUS:Chrome"))
+    assert called["name"] == "Chrome"  # nosec B101
+    assert result == "Focused Chrome."  # nosec B101
+
+
+def test_dispatch_action_routes_ui_observe(monkeypatch):
+    import gui_actions
+
+    monkeypatch.setattr(
+        gui_actions,
+        "observe_frontmost",
+        lambda: 'window "Inbox"\n  button "Send"',
+    )
+    result = run(server.dispatch_action("UI:OBSERVE"))
+    assert "Inbox" in result and "Send" in result  # nosec B101
+
+
+def test_dispatch_action_unknown_ui_subkind_returns_message():
+    result = run(server.dispatch_action("UI:WHATEVER"))
+    assert "Unknown UI action" in result  # nosec B101
+
+
+def test_system_prompt_mentions_ui_focus_and_ui_observe():
+    prompt = server._build_system_prompt()
+    assert "UI:FOCUS" in prompt  # nosec B101
+    assert "UI:OBSERVE" in prompt  # nosec B101
+
+
 def test_system_prompt_embeds_current_local_time(monkeypatch):
     """The prompt must anchor today's date so relative phrases like
     "내일" / "tomorrow" resolve against the host clock, not the model's
