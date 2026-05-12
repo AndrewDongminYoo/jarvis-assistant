@@ -1,8 +1,9 @@
-"""macOS Accessibility-based GUI inspection for JARVIS.
+"""macOS Accessibility-based GUI automation for JARVIS.
 
-Provides UI:OBSERVE (dump frontmost app's UI tree) and UI:FOCUS (activate
-an app by name) action handlers. Read-only — write actions (CLICK, TYPE,
-KEY, SCROLL) land in phase 5.
+Provides the full UI surface — UI:FOCUS and UI:OBSERVE (phase 4, read) plus
+UI:CLICK, UI:TYPE, UI:KEY, UI:SCROLL (phase 5, write). The write actions
+go through AppleScript System Events for keystroke/key-code synthesis and
+Quartz CGEvent for scroll wheel; clicks use AX `AXPress`.
 
 pyobjc imports happen lazily inside the production helpers so this module
 is importable on systems without pyobjc (e.g. test fixtures that monkey-
@@ -90,6 +91,7 @@ _TIER_A_ROLES: dict[str, str] = {
     "AXRadioButton": "radio",
     "AXMenuItem": "menu_item",
     "AXMenuButton": "menu_button",
+    "AXMenuBarItem": "menu_bar_item",
     "AXTab": "tab",
     "AXStaticText": "text",
     "AXRow": "row",

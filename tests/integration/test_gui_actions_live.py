@@ -74,7 +74,10 @@ def test_click_finder_menu_via_observe_vocabulary():
     out = gui_actions.observe_frontmost()
     assert "menu_bar" in out, out  # nosec B101
     # "View" is a stable Finder menu title across recent macOS versions.
-    result = gui_actions.click_element("menu_button", "View")
+    # Top-level menu titles have AX role AXMenuBarItem (→ menu_bar_item),
+    # not AXMenuButton — the latter is for popup-style buttons within
+    # toolbars.
+    result = gui_actions.click_element("menu_bar_item", "View")
     assert "Clicked" in result, result  # nosec B101
     time.sleep(0.3)
     # Dismiss

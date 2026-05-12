@@ -32,6 +32,10 @@ def test_normalize_role_tier_a_examples():
         "menu_button",
         "A",
     )  # nosec B101
+    assert gui_actions._normalize_role("AXMenuBarItem") == (
+        "menu_bar_item",
+        "A",
+    )  # nosec B101
     assert gui_actions._normalize_role("AXTab") == ("tab", "A")  # nosec B101
     assert gui_actions._normalize_role("AXStaticText") == ("text", "A")  # nosec B101
     assert gui_actions._normalize_role("AXRow") == ("row", "A")  # nosec B101
