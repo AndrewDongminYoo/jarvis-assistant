@@ -852,3 +852,50 @@ def test_send_key_reports_failure_when_run_returns_false(monkeypatch):
     monkeypatch.setattr(gui_actions, "_run_system_events", lambda _a: False)
     result = gui_actions.send_key("cmd+t")
     assert "Couldn't" in result  # nosec B101
+
+
+def test_scroll_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    assert "Accessibility" in gui_actions.scroll("down", 3)  # nosec B101
+
+
+def test_scroll_rejects_unknown_direction(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.scroll("sideways", 3)
+    assert "direction" in result.lower()  # nosec B101
+
+
+def test_scroll_rejects_non_positive_amount(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.scroll("down", 0)
+    assert "positive" in result.lower() or "amount" in result.lower()  # nosec B101
+
+
+def test_scroll_calls_cgevent_with_correct_signs(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    calls = []
+
+    def fake_scroll(direction, amount):
+        calls.append((direction, amount))
+        return True
+
+    monkeypatch.setattr(gui_actions, "_scroll_via_cgevent", fake_scroll)
+    gui_actions.scroll("down", 5)
+    gui_actions.scroll("UP", 2)
+    gui_actions.scroll("Left", 1)
+    assert calls == [("down", 5), ("up", 2), ("left", 1)]  # nosec B101
+
+
+def test_scroll_reports_failure_when_cgevent_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_scroll_via_cgevent", lambda _d, _a: False)
+    result = gui_actions.scroll("down", 3)
+    assert "Couldn't" in result  # nosec B101
+
+
+def test_scroll_reports_success_with_direction_and_amount(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_scroll_via_cgevent", lambda _d, _a: True)
+    result = gui_actions.scroll("down", 3)
+    assert "Scrolled" in result  # nosec B101
+    assert "down" in result and "3" in result  # nosec B101

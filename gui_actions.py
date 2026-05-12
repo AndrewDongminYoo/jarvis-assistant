@@ -566,6 +566,58 @@ def send_key(spec: str) -> str:
     return f"Couldn't send {spec}."
 
 
+def _scroll_via_cgevent(direction: str, amount: int) -> bool:
+    """Post a programmatic scroll wheel event. Returns True on success."""
+    try:
+        from Quartz import (  # type: ignore
+            CGEventCreateScrollWheelEvent,
+            CGEventPost,
+            kCGHIDEventTap,
+            kCGScrollEventUnitLine,
+        )
+
+        delta_y = 0
+        delta_x = 0
+        if direction == "up":
+            delta_y = amount
+        elif direction == "down":
+            delta_y = -amount
+        elif direction == "left":
+            delta_x = amount
+        elif direction == "right":
+            delta_x = -amount
+        else:
+            return False
+        if delta_x != 0:
+            event = CGEventCreateScrollWheelEvent(
+                None, kCGScrollEventUnitLine, 2, delta_y, delta_x
+            )
+        else:
+            event = CGEventCreateScrollWheelEvent(
+                None, kCGScrollEventUnitLine, 1, delta_y
+            )
+        if event is None:
+            return False
+        CGEventPost(kCGHIDEventTap, event)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("CGEvent scroll failed: %s", e)
+        return False
+
+
+def scroll(direction: str, amount: int) -> str:
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    direction_normalized = direction.lower().strip()
+    if direction_normalized not in ("up", "down", "left", "right"):
+        return f"Unknown scroll direction '{direction}'."
+    if amount <= 0:
+        return "Scroll amount must be a positive integer."
+    if _scroll_via_cgevent(direction_normalized, amount):
+        return f"Scrolled {direction_normalized} {amount} line(s)."
+    return f"Couldn't scroll {direction_normalized}."
+
+
 def type_text(text: str) -> str:
     if not text:
         return "Missing text to type."
