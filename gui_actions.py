@@ -460,3 +460,46 @@ def click_element(role: str, label: str) -> str:
     if _press_via_ax(target):
         return f"Clicked {role}: {label}."
     return f"Couldn't click {role}: {label}."
+
+
+def _run_system_events(action: str) -> bool:
+    """Run an AppleScript `tell application "System Events" to <action>`.
+
+    Returns True on success. Used for keystroke/key-code synthesis where AX
+    actions don't directly apply.
+    """
+    import subprocess
+
+    script = f'tell application "System Events" to {action}'
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=APPLESCRIPT_TIMEOUT,
+        )
+        if r.returncode != 0:
+            log.warning("System Events AppleScript failed: %s", r.stderr.strip())
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        log.warning("System Events AppleScript timed out")
+        return False
+
+
+def _escape_applescript_string(text: str) -> str:
+    """Escape backslashes and double quotes for embedding inside an
+    AppleScript string literal."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def type_text(text: str) -> str:
+    if not text:
+        return "Missing text to type."
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    escaped = _escape_applescript_string(text)
+    action = f'keystroke "{escaped}"'
+    if _run_system_events(action):
+        return f"Typed: {text}"
+    return f"Couldn't type '{text}'."

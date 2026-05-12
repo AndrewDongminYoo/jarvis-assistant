@@ -664,3 +664,49 @@ def test_click_element_reports_failure_when_press_returns_false(monkeypatch):
     monkeypatch.setattr(gui_actions, "_press_via_ax", lambda _e: False)
     result = gui_actions.click_element("button", "Send")
     assert "Couldn't click" in result  # nosec B101
+
+
+def test_type_text_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    result = gui_actions.type_text("hello")
+    assert "Accessibility" in result  # nosec B101
+
+
+def test_type_text_returns_missing_message_when_empty(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.type_text("")
+    assert "Missing" in result or "missing" in result  # nosec B101
+
+
+def test_type_text_invokes_system_events_keystroke(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    result = gui_actions.type_text("hello world")
+    assert sent["action"] == 'keystroke "hello world"'  # nosec B101
+    assert "Typed" in result  # nosec B101
+
+
+def test_type_text_escapes_quotes_and_backslashes(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    gui_actions.type_text('a "quoted" \\ string')
+    assert sent["action"] == 'keystroke "a \\"quoted\\" \\\\ string"'  # nosec B101
+
+
+def test_type_text_reports_failure_when_run_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_run_system_events", lambda _a: False)
+    result = gui_actions.type_text("hello")
+    assert "Couldn't" in result  # nosec B101
