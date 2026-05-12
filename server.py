@@ -105,6 +105,10 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:PLAN_ANSWER:task::answers]     — produce the numbered plan once user has answered
   [ACTION:UI:FOCUS:app_name]             — activate an app (Chrome, Slack, Mail…)
   [ACTION:UI:OBSERVE]                    — read the frontmost app's UI
+  [ACTION:UI:CLICK:role::label]          — click a tier-A element by its OBSERVE role/label
+  [ACTION:UI:TYPE:text]                  — type the given text into the focused field
+  [ACTION:UI:KEY:cmd+t]                  — send a keystroke (cmd/shift/alt/ctrl + char or named key)
+  [ACTION:UI:SCROLL:direction::amount]   — scroll the frontmost window (direction: up|down|left|right, amount: lines)
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
   [ACTION:RECALL:query]                  — search prior conversation
@@ -319,6 +323,36 @@ async def dispatch_action(tag: str) -> str:
             from gui_actions import observe_frontmost
 
             return await asyncio.to_thread(observe_frontmost)
+        if sub == "CLICK":
+            from gui_actions import click_element
+
+            payload = parts[2] if len(parts) > 2 else ""
+            role, sep, label = payload.partition("::")
+            if not sep:
+                return "UI:CLICK needs role::label."
+            return await asyncio.to_thread(click_element, role.strip(), label.strip())
+        if sub == "TYPE":
+            from gui_actions import type_text
+
+            text = parts[2] if len(parts) > 2 else ""
+            return await asyncio.to_thread(type_text, text)
+        if sub == "KEY":
+            from gui_actions import send_key
+
+            spec = parts[2] if len(parts) > 2 else ""
+            return await asyncio.to_thread(send_key, spec)
+        if sub == "SCROLL":
+            from gui_actions import scroll
+
+            payload = parts[2] if len(parts) > 2 else ""
+            direction, sep, amount_str = payload.partition("::")
+            if not sep:
+                return "UI:SCROLL needs direction::amount."
+            try:
+                amount = int(amount_str.strip())
+            except ValueError:
+                return f"UI:SCROLL amount must be an integer, got '{amount_str}'."
+            return await asyncio.to_thread(scroll, direction.strip(), amount)
         return f"Unknown UI action: {sub}"
 
     return f"Unknown action: {kind}"
