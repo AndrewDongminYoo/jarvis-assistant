@@ -430,3 +430,33 @@ def observe_frontmost() -> str:
     if not lines:
         return f"{info['name']} has no inspectable UI right now."
     return "\n".join(lines)
+
+
+def _press_via_ax(element: Any) -> bool:
+    """Send the AXPress action to an AX element. Returns True on success."""
+    from ApplicationServices import AXUIElementPerformAction  # type: ignore
+
+    try:
+        err = AXUIElementPerformAction(element, "AXPress")
+        return err == 0
+    except Exception as e:  # noqa: BLE001
+        log.warning("AXPress failed: %s", e)
+        return False
+
+
+def click_element(role: str, label: str) -> str:
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    try:
+        info = _frontmost_app()
+    except Exception as e:  # noqa: BLE001
+        log.warning("frontmost app lookup failed: %s", e)
+        return "Couldn't read UI from the frontmost app."
+    if info is None:
+        return "No frontmost app — try 'focus <app name>' first."
+    target = _find_element(info["root"], role, label)
+    if target is None:
+        return f"Couldn't find {role} matching '{label}'."
+    if _press_via_ax(target):
+        return f"Clicked {role}: {label}."
+    return f"Couldn't click {role}: {label}."

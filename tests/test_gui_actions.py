@@ -600,3 +600,67 @@ def test_find_element_skips_label_less_elements():
     }
     found = gui_actions._find_element(root, "button", "Send")
     assert found is not None and found["title"] == "Send"  # nosec B101
+
+
+def test_click_element_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    result = gui_actions.click_element("button", "Send")
+    assert "Accessibility" in result  # nosec B101
+
+
+def test_click_element_returns_no_frontmost_when_none(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_frontmost_app", lambda: None)
+    result = gui_actions.click_element("button", "Send")
+    assert "No frontmost app" in result  # nosec B101
+
+
+def test_click_element_returns_not_found_when_no_match(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {"role": "AXWindow", "children": []}
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    result = gui_actions.click_element("button", "Nonexistent")
+    assert "Couldn't find" in result and "Nonexistent" in result  # nosec B101
+
+
+def test_click_element_presses_and_reports_success(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    pressed = {}
+
+    def fake_press(element):
+        pressed["title"] = element["title"]
+        return True
+
+    monkeypatch.setattr(gui_actions, "_press_via_ax", fake_press)
+    result = gui_actions.click_element("button", "Send")
+    assert pressed == {"title": "Send"}  # nosec B101
+    assert "Clicked" in result and "Send" in result  # nosec B101
+
+
+def test_click_element_reports_failure_when_press_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    monkeypatch.setattr(gui_actions, "_press_via_ax", lambda _e: False)
+    result = gui_actions.click_element("button", "Send")
+    assert "Couldn't click" in result  # nosec B101
