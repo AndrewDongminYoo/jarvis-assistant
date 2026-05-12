@@ -518,3 +518,85 @@ def test_permission_prompt_falls_back_when_app_unknown(monkeypatch):
     msg = gui_actions._permission_prompt()
     assert "terminal" in msg.lower()  # nosec B101
     assert "Accessibility" in msg  # nosec B101
+
+
+def test_find_element_returns_first_match_by_role_and_label():
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {"role": "AXButton", "title": "Cancel"},
+            {"role": "AXButton", "title": "Send"},
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None  # nosec B101
+    assert found["title"] == "Send"  # nosec B101
+
+
+def test_find_element_case_insensitive_label_substring():
+    root = {"role": "AXButton", "title": "New Message"}
+    assert gui_actions._find_element(root, "button", "new") is not None  # nosec B101
+    assert (
+        gui_actions._find_element(root, "button", "MESSAGE") is not None
+    )  # nosec B101
+
+
+def test_find_element_returns_none_when_role_mismatches():
+    root = {"role": "AXLink", "title": "Send"}
+    assert gui_actions._find_element(root, "button", "Send") is None  # nosec B101
+
+
+def test_find_element_returns_none_when_no_match():
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Cancel"}],
+    }
+    assert gui_actions._find_element(root, "button", "Send") is None  # nosec B101
+
+
+def test_find_element_descends_into_nested_subtrees():
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {
+                "role": "AXToolbar",
+                "children": [
+                    {
+                        "role": "AXGroup",
+                        "children": [{"role": "AXButton", "title": "Send"}],
+                    }
+                ],
+            }
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None and found["title"] == "Send"  # nosec B101
+
+
+def test_find_element_dfs_returns_first_match_not_deepest():
+    """First DFS match wins. A shallow button beats a deep button with
+    the same label."""
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {"role": "AXButton", "title": "Send", "id": "shallow"},
+            {
+                "role": "AXGroup",
+                "children": [{"role": "AXButton", "title": "Send", "id": "deep"}],
+            },
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None and found["id"] == "shallow"  # nosec B101
+
+
+def test_find_element_skips_label_less_elements():
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {"role": "AXButton"},  # no label
+            {"role": "AXButton", "title": "Send"},
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None and found["title"] == "Send"  # nosec B101

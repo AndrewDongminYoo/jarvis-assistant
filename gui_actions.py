@@ -186,6 +186,36 @@ def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
     return None, None
 
 
+def _find_element(root: Any, role: str, label_substring: str) -> Optional[Any]:
+    """Depth-first search for the first element matching role + label.
+
+    Returns the live element handle (or dict in tests) or None. The role
+    argument is the normalized snake_case form ("button", "link", …);
+    label match is case-insensitive substring. First DFS hit wins.
+    """
+    target_role = role.lower() if role else ""
+    target_label = label_substring.lower() if label_substring else ""
+
+    def _matches(element: Any) -> bool:
+        elem_role, _tier = _normalize_role(_get_role(element))
+        if elem_role != target_role:
+            return False
+        elem_label = _label_for(element)
+        if not elem_label:
+            return False
+        return target_label in elem_label.lower()
+
+    stack: list[Any] = [root]
+    while stack:
+        element = stack.pop()
+        if _matches(element):
+            return element
+        # Reverse so children pop in declared order (DFS, left-to-right).
+        for child in reversed(_get_children(element)):
+            stack.append(child)
+    return None
+
+
 def _traverse(element: Any, depth: int = 0) -> list[str]:
     """Walk an AX subtree and emit pruned, indented lines.
 
