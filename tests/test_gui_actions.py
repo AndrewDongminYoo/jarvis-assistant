@@ -32,6 +32,10 @@ def test_normalize_role_tier_a_examples():
         "menu_button",
         "A",
     )  # nosec B101
+    assert gui_actions._normalize_role("AXMenuBarItem") == (
+        "menu_bar_item",
+        "A",
+    )  # nosec B101
     assert gui_actions._normalize_role("AXTab") == ("tab", "A")  # nosec B101
     assert gui_actions._normalize_role("AXStaticText") == ("text", "A")  # nosec B101
     assert gui_actions._normalize_role("AXRow") == ("row", "A")  # nosec B101
@@ -518,3 +522,401 @@ def test_permission_prompt_falls_back_when_app_unknown(monkeypatch):
     msg = gui_actions._permission_prompt()
     assert "terminal" in msg.lower()  # nosec B101
     assert "Accessibility" in msg  # nosec B101
+
+
+def test_find_element_returns_first_match_by_role_and_label():
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {"role": "AXButton", "title": "Cancel"},
+            {"role": "AXButton", "title": "Send"},
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None  # nosec B101
+    assert found["title"] == "Send"  # nosec B101
+
+
+def test_find_element_case_insensitive_label_substring():
+    root = {"role": "AXButton", "title": "New Message"}
+    assert gui_actions._find_element(root, "button", "new") is not None  # nosec B101
+    assert (
+        gui_actions._find_element(root, "button", "MESSAGE") is not None
+    )  # nosec B101
+
+
+def test_find_element_returns_none_when_role_mismatches():
+    root = {"role": "AXLink", "title": "Send"}
+    assert gui_actions._find_element(root, "button", "Send") is None  # nosec B101
+
+
+def test_find_element_returns_none_when_no_match():
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Cancel"}],
+    }
+    assert gui_actions._find_element(root, "button", "Send") is None  # nosec B101
+
+
+def test_find_element_descends_into_nested_subtrees():
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {
+                "role": "AXToolbar",
+                "children": [
+                    {
+                        "role": "AXGroup",
+                        "children": [{"role": "AXButton", "title": "Send"}],
+                    }
+                ],
+            }
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None and found["title"] == "Send"  # nosec B101
+
+
+def test_find_element_dfs_returns_first_match_not_deepest():
+    """First DFS match wins. A shallow button beats a deep button with
+    the same label."""
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {"role": "AXButton", "title": "Send", "id": "shallow"},
+            {
+                "role": "AXGroup",
+                "children": [{"role": "AXButton", "title": "Send", "id": "deep"}],
+            },
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None and found["id"] == "shallow"  # nosec B101
+
+
+def test_find_element_skips_label_less_elements():
+    root = {
+        "role": "AXWindow",
+        "children": [
+            {"role": "AXButton"},  # no label
+            {"role": "AXButton", "title": "Send"},
+        ],
+    }
+    found = gui_actions._find_element(root, "button", "Send")
+    assert found is not None and found["title"] == "Send"  # nosec B101
+
+
+def test_find_element_returns_none_for_empty_label():
+    """Empty label would be a substring of every label; reject to keep
+    safety.classify's risky-label guard intact."""
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    assert gui_actions._find_element(root, "button", "") is None  # nosec B101
+    assert gui_actions._find_element(root, "button", "   ") is None  # nosec B101
+
+
+def test_find_element_returns_none_for_empty_role():
+    root = {"role": "AXButton", "title": "Send"}
+    assert gui_actions._find_element(root, "", "Send") is None  # nosec B101
+    assert gui_actions._find_element(root, "   ", "Send") is None  # nosec B101
+
+
+def test_click_element_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    result = gui_actions.click_element("button", "Send")
+    assert "Accessibility" in result  # nosec B101
+
+
+def test_click_element_returns_no_frontmost_when_none(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_frontmost_app", lambda: None)
+    result = gui_actions.click_element("button", "Send")
+    assert "No frontmost app" in result  # nosec B101
+
+
+def test_click_element_returns_not_found_when_no_match(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {"role": "AXWindow", "children": []}
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    result = gui_actions.click_element("button", "Nonexistent")
+    assert "Couldn't find" in result and "Nonexistent" in result  # nosec B101
+
+
+def test_click_element_presses_and_reports_success(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    pressed = {}
+
+    def fake_press(element):
+        pressed["title"] = element["title"]
+        return True
+
+    monkeypatch.setattr(gui_actions, "_press_via_ax", fake_press)
+    result = gui_actions.click_element("button", "Send")
+    assert pressed == {"title": "Send"}  # nosec B101
+    assert "Clicked" in result and "Send" in result  # nosec B101
+
+
+def test_click_element_reports_failure_when_press_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    fake_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app",
+        lambda: {"name": "Mail", "root": fake_root},
+    )
+    monkeypatch.setattr(gui_actions, "_press_via_ax", lambda _e: False)
+    result = gui_actions.click_element("button", "Send")
+    assert "Couldn't click" in result  # nosec B101
+
+
+def test_type_text_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    result = gui_actions.type_text("hello")
+    assert "Accessibility" in result  # nosec B101
+
+
+def test_type_text_returns_missing_message_when_empty(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.type_text("")
+    assert "Missing" in result or "missing" in result  # nosec B101
+
+
+def test_type_text_invokes_system_events_keystroke(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    result = gui_actions.type_text("hello world")
+    assert sent["action"] == 'keystroke "hello world"'  # nosec B101
+    assert "Typed" in result  # nosec B101
+
+
+def test_type_text_escapes_quotes_and_backslashes(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    gui_actions.type_text('a "quoted" \\ string')
+    assert sent["action"] == 'keystroke "a \\"quoted\\" \\\\ string"'  # nosec B101
+
+
+def test_type_text_reports_failure_when_run_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_run_system_events", lambda _a: False)
+    result = gui_actions.type_text("hello")
+    assert "Couldn't" in result  # nosec B101
+
+
+def test_parse_key_spec_single_character():
+    char, code, mods = gui_actions._parse_key_spec("t")
+    assert char == "t"  # nosec B101
+    assert code is None  # nosec B101
+    assert mods == []  # nosec B101
+
+
+def test_parse_key_spec_single_modifier_plus_char():
+    char, code, mods = gui_actions._parse_key_spec("cmd+t")
+    assert char == "t"  # nosec B101
+    assert code is None  # nosec B101
+    assert mods == ["command down"]  # nosec B101
+
+
+def test_parse_key_spec_multiple_modifiers_in_order():
+    char, code, mods = gui_actions._parse_key_spec("shift+cmd+a")
+    assert char == "a"  # nosec B101
+    assert mods == ["shift down", "command down"]  # nosec B101
+
+
+def test_parse_key_spec_modifier_aliases():
+    _c1, _k1, m1 = gui_actions._parse_key_spec("command+t")
+    _c2, _k2, m2 = gui_actions._parse_key_spec("option+t")
+    _c3, _k3, m3 = gui_actions._parse_key_spec("opt+t")
+    _c4, _k4, m4 = gui_actions._parse_key_spec("control+t")
+    assert m1 == ["command down"]  # nosec B101
+    assert m2 == ["option down"]  # nosec B101
+    assert m3 == ["option down"]  # nosec B101
+    assert m4 == ["control down"]  # nosec B101
+
+
+def test_parse_key_spec_named_keys():
+    cases = {
+        "return": 36,
+        "enter": 36,
+        "tab": 48,
+        "space": 49,
+        "esc": 53,
+        "escape": 53,
+        "delete": 51,
+        "backspace": 51,
+        "up": 126,
+        "down": 125,
+        "left": 123,
+        "right": 124,
+    }
+    for spec, expected_code in cases.items():
+        char, code, mods = gui_actions._parse_key_spec(spec)
+        assert char is None, spec  # nosec B101
+        assert code == expected_code, spec  # nosec B101
+        assert mods == [], spec  # nosec B101
+
+
+def test_parse_key_spec_named_key_with_modifier():
+    char, code, mods = gui_actions._parse_key_spec("cmd+return")
+    assert char is None  # nosec B101
+    assert code == 36  # nosec B101
+    assert mods == ["command down"]  # nosec B101
+
+
+def test_parse_key_spec_case_insensitive():
+    char, code, mods = gui_actions._parse_key_spec("CMD+T")
+    assert char == "t"  # nosec B101
+    assert mods == ["command down"]  # nosec B101
+
+
+def test_parse_key_spec_unknown_modifier_returns_none():
+    char, code, mods = gui_actions._parse_key_spec("hyper+t")
+    assert char is None and code is None  # nosec B101
+    assert mods == []  # nosec B101
+
+
+def test_parse_key_spec_unknown_named_key_returns_none():
+    char, code, mods = gui_actions._parse_key_spec("foobar")
+    assert char is None and code is None  # nosec B101
+
+
+def test_parse_key_spec_empty_string_returns_none():
+    char, code, mods = gui_actions._parse_key_spec("")
+    assert char is None and code is None  # nosec B101
+
+
+def test_send_key_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    assert "Accessibility" in gui_actions.send_key("cmd+t")  # nosec B101
+
+
+def test_send_key_rejects_unparseable_spec(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.send_key("hyper+t")
+    assert "parse" in result.lower() or "couldn't" in result.lower()  # nosec B101
+
+
+def test_send_key_character_with_modifiers(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    result = gui_actions.send_key("shift+cmd+a")
+    assert sent["action"] == (
+        'keystroke "a" using {shift down, command down}'
+    )  # nosec B101
+    assert "Sent" in result and "shift+cmd+a" in result  # nosec B101
+
+
+def test_send_key_character_without_modifiers(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    gui_actions.send_key("a")
+    assert sent["action"] == 'keystroke "a"'  # nosec B101
+
+
+def test_send_key_named_key_uses_key_code(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    sent = {}
+
+    def fake_run(action):
+        sent["action"] = action
+        return True
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", fake_run)
+    gui_actions.send_key("cmd+return")
+    assert sent["action"] == "key code 36 using {command down}"  # nosec B101
+
+
+def test_send_key_reports_failure_when_run_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_run_system_events", lambda _a: False)
+    result = gui_actions.send_key("cmd+t")
+    assert "Couldn't" in result  # nosec B101
+
+
+def test_scroll_returns_permission_message_when_not_trusted(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
+    assert "Accessibility" in gui_actions.scroll("down", 3)  # nosec B101
+
+
+def test_scroll_rejects_unknown_direction(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.scroll("sideways", 3)
+    assert "direction" in result.lower()  # nosec B101
+
+
+def test_scroll_rejects_non_positive_amount(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    result = gui_actions.scroll("down", 0)
+    assert "positive" in result.lower() or "amount" in result.lower()  # nosec B101
+
+
+def test_scroll_calls_cgevent_with_correct_signs(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    calls = []
+
+    def fake_scroll(direction, amount):
+        calls.append((direction, amount))
+        return True
+
+    monkeypatch.setattr(gui_actions, "_scroll_via_cgevent", fake_scroll)
+    gui_actions.scroll("down", 5)
+    gui_actions.scroll("UP", 2)
+    gui_actions.scroll("Left", 1)
+    assert calls == [("down", 5), ("up", 2), ("left", 1)]  # nosec B101
+
+
+def test_scroll_reports_failure_when_cgevent_returns_false(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_scroll_via_cgevent", lambda _d, _a: False)
+    result = gui_actions.scroll("down", 3)
+    assert "Couldn't" in result  # nosec B101
+
+
+def test_scroll_reports_success_with_direction_and_amount(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "_scroll_via_cgevent", lambda _d, _a: True)
+    result = gui_actions.scroll("down", 3)
+    assert "Scrolled" in result  # nosec B101
+    assert "down" in result and "3" in result  # nosec B101

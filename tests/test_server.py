@@ -243,3 +243,108 @@ def test_now_local_label_uses_host_timezone():
         r"^(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),",
         label,
     ), label
+
+
+def test_dispatch_action_routes_ui_click(monkeypatch):
+    import gui_actions
+
+    called = {}
+
+    def fake_click(role, label):
+        called["args"] = (role, label)
+        return "Clicked button: Send."
+
+    monkeypatch.setattr(gui_actions, "click_element", fake_click)
+    result = run(server.dispatch_action("UI:CLICK:button::Send"))
+    assert called["args"] == ("button", "Send")  # nosec B101
+    assert "Clicked" in result  # nosec B101
+
+
+def test_dispatch_action_routes_ui_type(monkeypatch):
+    import gui_actions
+
+    called = {}
+
+    def fake_type(text):
+        called["text"] = text
+        return f"Typed: {text}"
+
+    monkeypatch.setattr(gui_actions, "type_text", fake_type)
+    result = run(server.dispatch_action("UI:TYPE:hello world"))
+    assert called["text"] == "hello world"  # nosec B101
+    assert "hello world" in result  # nosec B101
+
+
+def test_dispatch_action_routes_ui_key(monkeypatch):
+    import gui_actions
+
+    called = {}
+
+    def fake_key(spec):
+        called["spec"] = spec
+        return f"Sent {spec}."
+
+    monkeypatch.setattr(gui_actions, "send_key", fake_key)
+    result = run(server.dispatch_action("UI:KEY:cmd+t"))
+    assert called["spec"] == "cmd+t"  # nosec B101
+    assert "cmd+t" in result  # nosec B101
+
+
+def test_dispatch_action_routes_ui_scroll(monkeypatch):
+    import gui_actions
+
+    called = {}
+
+    def fake_scroll(direction, amount):
+        called["args"] = (direction, amount)
+        return f"Scrolled {direction} {amount} line(s)."
+
+    monkeypatch.setattr(gui_actions, "scroll", fake_scroll)
+    result = run(server.dispatch_action("UI:SCROLL:down::3"))
+    assert called["args"] == ("down", 3)  # nosec B101
+    assert "Scrolled" in result  # nosec B101
+
+
+def test_dispatch_action_ui_scroll_non_numeric_amount_errors():
+    result = run(server.dispatch_action("UI:SCROLL:down::abc"))
+    assert "amount" in result.lower() or "integer" in result.lower()  # nosec B101
+
+
+def test_dispatch_action_ui_click_missing_separator_errors():
+    """UI:CLICK requires role::label; a missing :: should be rejected with a
+    clear message rather than dispatched with empty label."""
+    result = run(server.dispatch_action("UI:CLICK:onlyrole"))
+    assert "::" in result or "label" in result.lower()  # nosec B101
+
+
+def test_dispatch_action_ui_click_empty_label_rejected_before_dispatch(monkeypatch):
+    """UI:CLICK:button:: would otherwise dispatch click_element with an empty
+    label, which matches every element via substring containment and lets a
+    malformed model output fire on an arbitrary button (potentially a risky
+    one like Send/Delete that safety.classify would have escalated to
+    CONFIRM if the label had been present)."""
+    import gui_actions
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("click_element must not run for empty label")
+
+    monkeypatch.setattr(gui_actions, "click_element", must_not_run)
+    result = run(server.dispatch_action("UI:CLICK:button::"))
+    assert "non-empty" in result.lower() or "needs" in result.lower()  # nosec B101
+
+
+def test_dispatch_action_ui_click_empty_role_rejected_before_dispatch(monkeypatch):
+    import gui_actions
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("click_element must not run for empty role")
+
+    monkeypatch.setattr(gui_actions, "click_element", must_not_run)
+    result = run(server.dispatch_action("UI:CLICK:::Send"))
+    assert "non-empty" in result.lower() or "needs" in result.lower()  # nosec B101
+
+
+def test_system_prompt_mentions_all_phase_5_tags():
+    prompt = server._build_system_prompt()
+    for tag in ("UI:CLICK", "UI:TYPE", "UI:KEY", "UI:SCROLL"):
+        assert tag in prompt, tag  # nosec B101

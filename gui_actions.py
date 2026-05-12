@@ -1,8 +1,9 @@
-"""macOS Accessibility-based GUI inspection for JARVIS.
+"""macOS Accessibility-based GUI automation for JARVIS.
 
-Provides UI:OBSERVE (dump frontmost app's UI tree) and UI:FOCUS (activate
-an app by name) action handlers. Read-only — write actions (CLICK, TYPE,
-KEY, SCROLL) land in phase 5.
+Provides the full UI surface — UI:FOCUS and UI:OBSERVE (phase 4, read) plus
+UI:CLICK, UI:TYPE, UI:KEY, UI:SCROLL (phase 5, write). The write actions
+go through AppleScript System Events for keystroke/key-code synthesis and
+Quartz CGEvent for scroll wheel; clicks use AX `AXPress`.
 
 pyobjc imports happen lazily inside the production helpers so this module
 is importable on systems without pyobjc (e.g. test fixtures that monkey-
@@ -90,6 +91,7 @@ _TIER_A_ROLES: dict[str, str] = {
     "AXRadioButton": "radio",
     "AXMenuItem": "menu_item",
     "AXMenuButton": "menu_button",
+    "AXMenuBarItem": "menu_bar_item",
     "AXTab": "tab",
     "AXStaticText": "text",
     "AXRow": "row",
@@ -184,6 +186,48 @@ def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
     if ax_role in _TIER_B_ROLES:
         return _TIER_B_ROLES[ax_role], "B"
     return None, None
+
+
+def _find_element(root: Any, role: str, label_substring: str) -> Optional[Any]:
+    """Depth-first search for the first element matching role + label.
+
+    Returns the live element handle (or dict in tests) or None. The role
+    argument is the normalized snake_case form ("button", "link", …);
+    label match is case-insensitive substring. First DFS hit wins.
+
+    Empty role or label_substring → None. Without this guard an empty
+    label would match every element via substring containment, which
+    could let a malformed UI:CLICK tag fire on an arbitrary button and
+    bypass safety.classify's risky-label list.
+    """
+    if (
+        not role
+        or not role.strip()
+        or not label_substring
+        or not label_substring.strip()
+    ):
+        return None
+    target_role = role.lower()
+    target_label = label_substring.lower()
+
+    def _matches(element: Any) -> bool:
+        elem_role, _tier = _normalize_role(_get_role(element))
+        if elem_role != target_role:
+            return False
+        elem_label = _label_for(element)
+        if not elem_label:
+            return False
+        return target_label in elem_label.lower()
+
+    stack: list[Any] = [root]
+    while stack:
+        element = stack.pop()
+        if _matches(element):
+            return element
+        # Reverse so children pop in declared order (DFS, left-to-right).
+        for child in reversed(_get_children(element)):
+            stack.append(child)
+    return None
 
 
 def _traverse(element: Any, depth: int = 0) -> list[str]:
@@ -400,3 +444,201 @@ def observe_frontmost() -> str:
     if not lines:
         return f"{info['name']} has no inspectable UI right now."
     return "\n".join(lines)
+
+
+def _press_via_ax(element: Any) -> bool:
+    """Send the AXPress action to an AX element. Returns True on success."""
+    from ApplicationServices import AXUIElementPerformAction  # type: ignore
+
+    try:
+        err = AXUIElementPerformAction(element, "AXPress")
+        return err == 0
+    except Exception as e:  # noqa: BLE001
+        log.warning("AXPress failed: %s", e)
+        return False
+
+
+def click_element(role: str, label: str) -> str:
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    try:
+        info = _frontmost_app()
+    except Exception as e:  # noqa: BLE001
+        log.warning("frontmost app lookup failed: %s", e)
+        return "Couldn't read UI from the frontmost app."
+    if info is None:
+        return "No frontmost app — try 'focus <app name>' first."
+    target = _find_element(info["root"], role, label)
+    if target is None:
+        return f"Couldn't find {role} matching '{label}'."
+    if _press_via_ax(target):
+        return f"Clicked {role}: {label}."
+    return f"Couldn't click {role}: {label}."
+
+
+def _run_system_events(action: str) -> bool:
+    """Run an AppleScript `tell application "System Events" to <action>`.
+
+    Returns True on success. Used for keystroke/key-code synthesis where AX
+    actions don't directly apply.
+    """
+    import subprocess
+
+    script = f'tell application "System Events" to {action}'
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=APPLESCRIPT_TIMEOUT,
+        )
+        if r.returncode != 0:
+            log.warning("System Events AppleScript failed: %s", r.stderr.strip())
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        log.warning("System Events AppleScript timed out")
+        return False
+
+
+def _escape_applescript_string(text: str) -> str:
+    """Escape backslashes and double quotes for embedding inside an
+    AppleScript string literal."""
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+_MODIFIER_ALIASES: dict[str, str] = {
+    "cmd": "command down",
+    "command": "command down",
+    "shift": "shift down",
+    "alt": "option down",
+    "opt": "option down",
+    "option": "option down",
+    "ctrl": "control down",
+    "control": "control down",
+    "fn": "function down",
+}
+
+_NAMED_KEY_CODES: dict[str, int] = {
+    "return": 36,
+    "enter": 36,
+    "tab": 48,
+    "space": 49,
+    "esc": 53,
+    "escape": 53,
+    "delete": 51,
+    "backspace": 51,
+    "up": 126,
+    "down": 125,
+    "left": 123,
+    "right": 124,
+}
+
+
+def _parse_key_spec(
+    spec: str,
+) -> tuple[Optional[str], Optional[int], list[str]]:
+    """Parse a key combo like 'cmd+t' or 'shift+cmd+return'.
+
+    Returns (character, key_code, modifiers). Exactly one of character or
+    key_code is non-None on success. modifiers is a list of AppleScript
+    modifier phrases ('command down', 'shift down', …) in the order given.
+    On parse failure all three are (None, None, []).
+    """
+    if not spec or not spec.strip():
+        return None, None, []
+    parts = [p.strip().lower() for p in spec.split("+") if p.strip()]
+    if not parts:
+        return None, None, []
+    *mod_parts, key_part = parts
+    modifiers: list[str] = []
+    for m in mod_parts:
+        phrase = _MODIFIER_ALIASES.get(m)
+        if phrase is None:
+            return None, None, []
+        modifiers.append(phrase)
+    if key_part in _NAMED_KEY_CODES:
+        return None, _NAMED_KEY_CODES[key_part], modifiers
+    if len(key_part) == 1:
+        return key_part, None, modifiers
+    return None, None, []
+
+
+def send_key(spec: str) -> str:
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    character, key_code, modifiers = _parse_key_spec(spec)
+    if character is None and key_code is None:
+        return f"Couldn't parse key spec '{spec}'."
+    mod_clause = " using {" + ", ".join(modifiers) + "}" if modifiers else ""
+    if character is not None:
+        action = f'keystroke "{character}"' + mod_clause
+    else:
+        action = f"key code {key_code}" + mod_clause
+    if _run_system_events(action):
+        return f"Sent {spec}."
+    return f"Couldn't send {spec}."
+
+
+def _scroll_via_cgevent(direction: str, amount: int) -> bool:
+    """Post a programmatic scroll wheel event. Returns True on success."""
+    try:
+        from Quartz import (  # type: ignore
+            CGEventCreateScrollWheelEvent,
+            CGEventPost,
+            kCGHIDEventTap,
+            kCGScrollEventUnitLine,
+        )
+
+        delta_y = 0
+        delta_x = 0
+        if direction == "up":
+            delta_y = amount
+        elif direction == "down":
+            delta_y = -amount
+        elif direction == "left":
+            delta_x = amount
+        elif direction == "right":
+            delta_x = -amount
+        else:
+            return False
+        if delta_x != 0:
+            event = CGEventCreateScrollWheelEvent(
+                None, kCGScrollEventUnitLine, 2, delta_y, delta_x
+            )
+        else:
+            event = CGEventCreateScrollWheelEvent(
+                None, kCGScrollEventUnitLine, 1, delta_y
+            )
+        if event is None:
+            return False
+        CGEventPost(kCGHIDEventTap, event)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("CGEvent scroll failed: %s", e)
+        return False
+
+
+def scroll(direction: str, amount: int) -> str:
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    direction_normalized = direction.lower().strip()
+    if direction_normalized not in ("up", "down", "left", "right"):
+        return f"Unknown scroll direction '{direction}'."
+    if amount <= 0:
+        return "Scroll amount must be a positive integer."
+    if _scroll_via_cgevent(direction_normalized, amount):
+        return f"Scrolled {direction_normalized} {amount} line(s)."
+    return f"Couldn't scroll {direction_normalized}."
+
+
+def type_text(text: str) -> str:
+    if not text:
+        return "Missing text to type."
+    if not _ax_is_trusted():
+        return _permission_prompt()
+    escaped = _escape_applescript_string(text)
+    action = f'keystroke "{escaped}"'
+    if _run_system_events(action):
+        return f"Typed: {text}"
+    return f"Couldn't type '{text}'."
