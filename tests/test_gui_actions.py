@@ -606,6 +606,23 @@ def test_find_element_skips_label_less_elements():
     assert found is not None and found["title"] == "Send"  # nosec B101
 
 
+def test_find_element_returns_none_for_empty_label():
+    """Empty label would be a substring of every label; reject to keep
+    safety.classify's risky-label guard intact."""
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    assert gui_actions._find_element(root, "button", "") is None  # nosec B101
+    assert gui_actions._find_element(root, "button", "   ") is None  # nosec B101
+
+
+def test_find_element_returns_none_for_empty_role():
+    root = {"role": "AXButton", "title": "Send"}
+    assert gui_actions._find_element(root, "", "Send") is None  # nosec B101
+    assert gui_actions._find_element(root, "   ", "Send") is None  # nosec B101
+
+
 def test_click_element_returns_permission_message_when_not_trusted(monkeypatch):
     monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
     result = gui_actions.click_element("button", "Send")

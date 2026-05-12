@@ -194,9 +194,21 @@ def _find_element(root: Any, role: str, label_substring: str) -> Optional[Any]:
     Returns the live element handle (or dict in tests) or None. The role
     argument is the normalized snake_case form ("button", "link", …);
     label match is case-insensitive substring. First DFS hit wins.
+
+    Empty role or label_substring → None. Without this guard an empty
+    label would match every element via substring containment, which
+    could let a malformed UI:CLICK tag fire on an arbitrary button and
+    bypass safety.classify's risky-label list.
     """
-    target_role = role.lower() if role else ""
-    target_label = label_substring.lower() if label_substring else ""
+    if (
+        not role
+        or not role.strip()
+        or not label_substring
+        or not label_substring.strip()
+    ):
+        return None
+    target_role = role.lower()
+    target_label = label_substring.lower()
 
     def _matches(element: Any) -> bool:
         elem_role, _tier = _normalize_role(_get_role(element))

@@ -317,6 +317,33 @@ def test_dispatch_action_ui_click_missing_separator_errors():
     assert "::" in result or "label" in result.lower()  # nosec B101
 
 
+def test_dispatch_action_ui_click_empty_label_rejected_before_dispatch(monkeypatch):
+    """UI:CLICK:button:: would otherwise dispatch click_element with an empty
+    label, which matches every element via substring containment and lets a
+    malformed model output fire on an arbitrary button (potentially a risky
+    one like Send/Delete that safety.classify would have escalated to
+    CONFIRM if the label had been present)."""
+    import gui_actions
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("click_element must not run for empty label")
+
+    monkeypatch.setattr(gui_actions, "click_element", must_not_run)
+    result = run(server.dispatch_action("UI:CLICK:button::"))
+    assert "non-empty" in result.lower() or "needs" in result.lower()  # nosec B101
+
+
+def test_dispatch_action_ui_click_empty_role_rejected_before_dispatch(monkeypatch):
+    import gui_actions
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("click_element must not run for empty role")
+
+    monkeypatch.setattr(gui_actions, "click_element", must_not_run)
+    result = run(server.dispatch_action("UI:CLICK:::Send"))
+    assert "non-empty" in result.lower() or "needs" in result.lower()  # nosec B101
+
+
 def test_system_prompt_mentions_all_phase_5_tags():
     prompt = server._build_system_prompt()
     for tag in ("UI:CLICK", "UI:TYPE", "UI:KEY", "UI:SCROLL"):

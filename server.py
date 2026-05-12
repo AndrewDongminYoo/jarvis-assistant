@@ -330,7 +330,13 @@ async def dispatch_action(tag: str) -> str:
             role, sep, label = payload.partition("::")
             if not sep:
                 return "UI:CLICK needs role::label."
-            return await asyncio.to_thread(click_element, role.strip(), label.strip())
+            role_clean = role.strip()
+            label_clean = label.strip()
+            if not role_clean or not label_clean:
+                # An empty label would match every element via substring
+                # search and bypass safety.classify's risky-label guard.
+                return "UI:CLICK needs a non-empty role and label."
+            return await asyncio.to_thread(click_element, role_clean, label_clean)
         if sub == "TYPE":
             from gui_actions import type_text
 
