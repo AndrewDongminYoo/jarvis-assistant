@@ -282,3 +282,141 @@ def _mouse_drag(
     except Exception as e:  # noqa: BLE001
         log.warning("mouse_drag failed: %s", e)
         return False
+
+
+# xdotool key-name aliases → our _parse_key_spec vocabulary.
+_XDOTOOL_KEY_ALIASES: dict[str, str] = {
+    "return": "return",
+    "enter": "return",
+    "backspace": "backspace",
+    "delete": "delete",
+    "escape": "escape",
+    "esc": "escape",
+    "tab": "tab",
+    "space": "space",
+    "up": "up",
+    "down": "down",
+    "left": "left",
+    "right": "right",
+    # Modifier aliases handled by _parse_key_spec already (cmd/ctrl/etc)
+}
+
+
+def _translate_key_spec(xdotool_spec: str) -> str:
+    """Translate xdotool key spec to our _parse_key_spec format.
+
+    xdotool uses `Return`, `BackSpace`, `cmd+t`, `ctrl+shift+a`. Our
+    parser is case-insensitive and accepts `+`-separated modifiers, so
+    the main work is lowercasing and renaming a few special keys.
+    """
+    parts = [p.strip() for p in xdotool_spec.split("+") if p.strip()]
+    if not parts:
+        return ""
+    translated = []
+    for token in parts[:-1]:
+        translated.append(token.lower())  # modifier; parser handles aliases
+    last = parts[-1].lower()
+    translated.append(_XDOTOOL_KEY_ALIASES.get(last, last))
+    return "+".join(translated)
+
+
+def _execute_action(action: str, params: dict, scale: float) -> dict:
+    """Run a single Computer Use tool action and return a tool_result
+    content block ready for the next message.
+
+    The returned dict has shape:
+      {"type": "image", "data": "<b64>", "scale": <new scale>}   # for screenshot
+      {"type": "text", "text": "<status>"}                        # everything else
+
+    `scale` is the current factor for translating model coordinates to
+    real-screen pixels. A screenshot action can return a NEW scale that
+    the caller should adopt for subsequent actions in this turn.
+    """
+    import gui_actions
+
+    coord = params.get("coordinate") or [0, 0]
+    if action == "screenshot":
+        shot = _capture_screenshot()
+        if shot is None:
+            return {
+                "type": "text",
+                "text": (
+                    "Screenshot failed — JARVIS may need Screen Recording "
+                    "permission. Grant it in System Settings > Privacy & "
+                    "Security > Screen Recording."
+                ),
+            }
+        b64, _w, _h, new_scale = shot
+        return {"type": "image", "data": b64, "scale": new_scale}
+
+    if action == "mouse_move":
+        _mouse_move(coord[0], coord[1], scale)
+        return {"type": "text", "text": f"moved cursor to ({coord[0]}, {coord[1]})"}
+
+    if action in ("left_click", "right_click", "middle_click", "double_click", "triple_click"):
+        button = "left"
+        count = 1
+        if action == "right_click":
+            button = "right"
+        elif action == "middle_click":
+            button = "middle"
+        elif action == "double_click":
+            count = 2
+        elif action == "triple_click":
+            count = 3
+        _mouse_click(coord[0], coord[1], scale, button=button, count=count)
+        return {
+            "type": "text",
+            "text": f"{action} at ({coord[0]}, {coord[1]})",
+        }
+
+    if action == "left_click_drag":
+        start = params.get("start_coordinate") or [0, 0]
+        end = coord
+        _mouse_drag(start[0], start[1], end[0], end[1], scale)
+        return {
+            "type": "text",
+            "text": f"dragged from {start} to {end}",
+        }
+
+    if action == "type":
+        text = str(params.get("text", ""))
+        escaped = gui_actions._escape_applescript_string(text)
+        gui_actions._run_system_events(f'keystroke "{escaped}"')
+        return {"type": "text", "text": f"typed: {text}"}
+
+    if action == "key":
+        spec = _translate_key_spec(str(params.get("text", "")))
+        char, key_code, modifiers = gui_actions._parse_key_spec(spec)
+        mod_clause = (
+            " using {" + ", ".join(modifiers) + "}" if modifiers else ""
+        )
+        if char is not None:
+            applescript = f'keystroke "{char}"' + mod_clause
+        elif key_code is not None:
+            applescript = f"key code {key_code}" + mod_clause
+        else:
+            return {"type": "text", "text": f"unsupported key spec: {spec}"}
+        gui_actions._run_system_events(applescript)
+        return {"type": "text", "text": f"sent key: {spec}"}
+
+    if action == "scroll":
+        direction = str(params.get("scroll_direction", "down")).lower()
+        amount = int(params.get("scroll_amount", 1))
+        gui_actions._scroll_via_cgevent(direction, amount)
+        return {
+            "type": "text",
+            "text": f"scrolled {direction} {amount} line(s)",
+        }
+
+    if action == "wait":
+        import time
+
+        duration = float(params.get("duration", 1.0))
+        time.sleep(duration)
+        return {"type": "text", "text": f"waited {duration}s"}
+
+    if action == "cursor_position":
+        return {"type": "text", "text": "cursor_position not implemented"}
+
+    return {"type": "text", "text": f"unsupported action: {action}"}

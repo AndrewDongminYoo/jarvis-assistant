@@ -209,3 +209,192 @@ def test_mouse_drag_posts_down_move_up(monkeypatch):
     _k_last, _t_last, p_last = posted[-1]
     assert p_first == (0.0, 0.0)  # nosec B101
     assert p_last == (100.0, 50.0)  # nosec B101
+
+
+def test_execute_action_screenshot_returns_tool_result_with_image(monkeypatch):
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("BASE64DATA", 1280, 800, 2.25),
+    )
+    result = computer_use._execute_action(
+        action="screenshot",
+        params={},
+        scale=1.0,
+    )
+    assert result["type"] == "image"  # nosec B101
+    assert result["data"] == "BASE64DATA"  # nosec B101
+    # The fresh screenshot's scale is carried back so subsequent actions
+    # in this turn use the right factor.
+    assert result["scale"] == 2.25  # nosec B101
+
+
+def test_execute_action_left_click_uses_scale_factor(monkeypatch):
+    calls = {}
+
+    def fake_click(x, y, scale, button="left", count=1):
+        calls["args"] = (x, y, scale, button, count)
+        return True
+
+    monkeypatch.setattr(computer_use, "_mouse_click", fake_click)
+    result = computer_use._execute_action(
+        action="left_click",
+        params={"coordinate": [100, 200]},
+        scale=2.0,
+    )
+    assert calls["args"] == (100, 200, 2.0, "left", 1)  # nosec B101
+    assert result["type"] == "text"  # nosec B101
+    assert "click" in result["text"].lower()  # nosec B101
+
+
+def test_execute_action_double_click(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        computer_use,
+        "_mouse_click",
+        lambda x, y, scale, button="left", count=1: calls.update(
+            args=(x, y, scale, button, count)
+        )
+        or True,
+    )
+    computer_use._execute_action(
+        action="double_click",
+        params={"coordinate": [50, 75]},
+        scale=1.0,
+    )
+    assert calls["args"] == (50, 75, 1.0, "left", 2)  # nosec B101
+
+
+def test_execute_action_right_click(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        computer_use,
+        "_mouse_click",
+        lambda x, y, scale, button="left", count=1: calls.update(
+            args=(x, y, scale, button, count)
+        )
+        or True,
+    )
+    computer_use._execute_action(
+        action="right_click",
+        params={"coordinate": [10, 10]},
+        scale=1.0,
+    )
+    assert calls["args"] == (10, 10, 1.0, "right", 1)  # nosec B101
+
+
+def test_execute_action_mouse_move(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        computer_use,
+        "_mouse_move",
+        lambda x, y, scale: calls.update(args=(x, y, scale)) or True,
+    )
+    computer_use._execute_action(
+        action="mouse_move",
+        params={"coordinate": [33, 44]},
+        scale=2.5,
+    )
+    assert calls["args"] == (33, 44, 2.5)  # nosec B101
+
+
+def test_execute_action_left_click_drag(monkeypatch):
+    calls = {}
+    monkeypatch.setattr(
+        computer_use,
+        "_mouse_drag",
+        lambda *args: calls.update(args=args) or True,
+    )
+    computer_use._execute_action(
+        action="left_click_drag",
+        params={"start_coordinate": [0, 0], "coordinate": [100, 50]},
+        scale=1.0,
+    )
+    assert calls["args"] == (0, 0, 100, 50, 1.0)  # nosec B101
+
+
+def test_execute_action_type_routes_to_system_events(monkeypatch):
+    import gui_actions
+
+    sent = {}
+    monkeypatch.setattr(
+        gui_actions,
+        "_run_system_events",
+        lambda action: sent.update(action=action) or True,
+    )
+    monkeypatch.setattr(
+        gui_actions,
+        "_escape_applescript_string",
+        lambda s: s.replace('"', '\\"'),
+    )
+    result = computer_use._execute_action(
+        action="type",
+        params={"text": "hello"},
+        scale=1.0,
+    )
+    assert sent["action"] == 'keystroke "hello"'  # nosec B101
+    assert result["type"] == "text"  # nosec B101
+
+
+def test_execute_action_key_translates_xdotool_aliases(monkeypatch):
+    import gui_actions
+
+    sent = []
+    monkeypatch.setattr(
+        gui_actions,
+        "_run_system_events",
+        lambda action: sent.append(action) or True,
+    )
+    # xdotool "Return" → our parser "return" → AppleScript key code 36
+    computer_use._execute_action(
+        action="key", params={"text": "Return"}, scale=1.0
+    )
+    assert sent[-1] == "key code 36"  # nosec B101
+    # cmd+t → keystroke "t" using {command down}
+    computer_use._execute_action(
+        action="key", params={"text": "cmd+t"}, scale=1.0
+    )
+    assert sent[-1] == 'keystroke "t" using {command down}'  # nosec B101
+
+
+def test_execute_action_scroll_routes_to_cgevent(monkeypatch):
+    import gui_actions
+
+    calls = {}
+    monkeypatch.setattr(
+        gui_actions,
+        "_scroll_via_cgevent",
+        lambda direction, amount: calls.update(args=(direction, amount)) or True,
+    )
+    computer_use._execute_action(
+        action="scroll",
+        params={
+            "coordinate": [100, 100],
+            "scroll_direction": "down",
+            "scroll_amount": 3,
+        },
+        scale=1.0,
+    )
+    assert calls["args"] == ("down", 3)  # nosec B101
+
+
+def test_execute_action_wait_sleeps(monkeypatch):
+    import time
+
+    slept = {}
+    monkeypatch.setattr(
+        time, "sleep", lambda secs: slept.update(secs=secs) or None
+    )
+    result = computer_use._execute_action(
+        action="wait", params={"duration": 0.5}, scale=1.0
+    )
+    assert slept["secs"] == 0.5  # nosec B101
+    assert result["type"] == "text"  # nosec B101
+
+
+def test_execute_action_unknown_returns_error_text():
+    result = computer_use._execute_action(
+        action="moonwalk", params={}, scale=1.0
+    )
+    assert result["type"] == "text"  # nosec B101
+    assert "unsupported" in result["text"].lower() or "unknown" in result["text"].lower()  # nosec B101
