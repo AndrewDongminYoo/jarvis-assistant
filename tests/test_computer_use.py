@@ -575,3 +575,107 @@ def test_run_computer_goal_recovers_on_anthropic_exception(monkeypatch):
     monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
     result = computer_use.run_computer_goal("any")
     assert "error" in result.lower() or "failed" in result.lower()  # nosec B101
+
+
+def test_execute_action_left_mouse_down_posts_single_down(monkeypatch):
+    posted = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_mouse_event",
+        lambda _s, t, p, _b: ("event", t, p),
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, event: posted.append(event)
+    )
+    result = computer_use._execute_action(
+        action="left_mouse_down",
+        params={"coordinate": [100, 50]},
+        scale=2.0,
+    )
+    assert len(posted) == 1  # nosec B101
+    assert posted[0][2] == (200.0, 100.0)  # scaled to logical  # nosec B101
+    assert result["type"] == "text"  # nosec B101
+    assert "down" in result["text"].lower()  # nosec B101
+
+
+def test_execute_action_left_mouse_up_uses_distinct_event_type(monkeypatch):
+    down_posted = []
+    up_posted = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_mouse_event",
+        lambda _s, t, p, _b: ("event", t, p),
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, e: down_posted.append(e)
+    )
+    computer_use._execute_action(
+        action="left_mouse_down", params={"coordinate": [10, 10]}, scale=1.0
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, e: up_posted.append(e)
+    )
+    computer_use._execute_action(
+        action="left_mouse_up", params={"coordinate": [10, 10]}, scale=1.0
+    )
+    # down and up post different CGEvent types at the same point
+    assert down_posted[0][1] != up_posted[0][1]  # nosec B101
+
+
+def test_execute_action_hold_key_modifier(monkeypatch):
+    import time
+
+    events = []
+    slept = {}
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_keyboard_event",
+        lambda kc, down: ("key", kc, down),
+    )
+    monkeypatch.setattr(computer_use, "_cg_set_flags", lambda _e, _f: None)
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, e: events.append(e)
+    )
+    monkeypatch.setattr(time, "sleep", lambda s: slept.update(s=s) or None)
+
+    result = computer_use._execute_action(
+        action="hold_key", params={"text": "shift", "duration": 0.5}, scale=1.0
+    )
+    assert slept["s"] == 0.5  # nosec B101
+    # keydown then keyup of the shift virtual keycode (56)
+    assert events[0] == ("key", 56, True)  # nosec B101
+    assert events[-1] == ("key", 56, False)  # nosec B101
+    assert result["type"] == "text"  # nosec B101
+
+
+def test_execute_action_hold_key_named_key(monkeypatch):
+    import time
+
+    events = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_keyboard_event",
+        lambda kc, down: ("key", kc, down),
+    )
+    monkeypatch.setattr(computer_use, "_cg_set_flags", lambda _e, _f: None)
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, e: events.append(e)
+    )
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    # xdotool "Return" → "return" → virtual keycode 36
+    computer_use._execute_action(
+        action="hold_key", params={"text": "Return", "duration": 0.1}, scale=1.0
+    )
+    assert events[0][1] == 36 and events[0][2] is True  # nosec B101
+    assert events[-1][1] == 36 and events[-1][2] is False  # nosec B101
+
+
+def test_execute_action_hold_key_unresolvable_returns_text(monkeypatch):
+    import time
+
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
+    result = computer_use._execute_action(
+        action="hold_key", params={"text": "f13", "duration": 0.1}, scale=1.0
+    )
+    assert result["type"] == "text"  # nosec B101
+    assert "unsupported" in result["text"].lower()  # nosec B101

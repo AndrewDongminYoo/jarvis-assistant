@@ -437,6 +437,33 @@ def _mouse_drag(
         return False
 
 
+def _mouse_button(x: float, y: float, scale: float, *, pressed: bool) -> bool:
+    """Post a single left-button down OR up event at scaled (x, y).
+
+    Used for `left_mouse_down` / `left_mouse_up`, which the model emits
+    to compose fine-grained press-hold-release sequences (selection,
+    custom drags) that a one-shot click can't express.
+    """
+    try:
+        from Quartz import (  # type: ignore
+            kCGEventLeftMouseDown,
+            kCGEventLeftMouseUp,
+            kCGHIDEventTap,
+            kCGMouseButtonLeft,
+        )
+
+        event_type = kCGEventLeftMouseDown if pressed else kCGEventLeftMouseUp
+        native = (x * scale, y * scale)
+        event = _cg_create_mouse_event(None, event_type, native, kCGMouseButtonLeft)
+        if event is None:
+            return False
+        _cg_post_event(kCGHIDEventTap, event)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("mouse_button failed: %s", e)
+        return False
+
+
 # xdotool key-name aliases → our _parse_key_spec vocabulary.
 _XDOTOOL_KEY_ALIASES: dict[str, str] = {
     "return": "return",
@@ -471,6 +498,159 @@ def _translate_key_spec(xdotool_spec: str) -> str:
     last = parts[-1].lower()
     translated.append(_XDOTOOL_KEY_ALIASES.get(last, last))
     return "+".join(translated)
+
+
+# US-ANSI virtual key codes for held keys (CGEvent keyboard events).
+# Letters/digits live here; named keys reuse gui_actions._NAMED_KEY_CODES.
+_VIRTUAL_KEYCODES: dict[str, int] = {
+    "a": 0,
+    "s": 1,
+    "d": 2,
+    "f": 3,
+    "h": 4,
+    "g": 5,
+    "z": 6,
+    "x": 7,
+    "c": 8,
+    "v": 9,
+    "b": 11,
+    "q": 12,
+    "w": 13,
+    "e": 14,
+    "r": 15,
+    "y": 16,
+    "t": 17,
+    "o": 31,
+    "u": 32,
+    "i": 34,
+    "p": 35,
+    "l": 37,
+    "j": 38,
+    "k": 40,
+    "n": 45,
+    "m": 46,
+    "1": 18,
+    "2": 19,
+    "3": 20,
+    "4": 21,
+    "5": 23,
+    "6": 22,
+    "7": 26,
+    "8": 28,
+    "9": 25,
+    "0": 29,
+}
+
+# Modifier names → their own virtual key codes (for holding a bare modifier).
+_MODIFIER_KEYCODES: dict[str, int] = {
+    "command": 55,
+    "cmd": 55,
+    "shift": 56,
+    "option": 58,
+    "opt": 58,
+    "alt": 58,
+    "control": 59,
+    "ctrl": 59,
+    "fn": 63,
+}
+_MODIFIER_NAMES = frozenset(_MODIFIER_KEYCODES)
+
+
+def _resolve_hold_key(spec: str) -> tuple[Optional[int], list[str]]:
+    """Resolve a translated key spec to (virtual_keycode, modifier_names).
+
+    Returns (None, []) if the key can't be mapped to a virtual key code.
+    A lone modifier (e.g. "shift") resolves to that modifier's own key
+    code with no extra flags.
+    """
+    import gui_actions
+
+    parts = [p for p in spec.split("+") if p]
+    if not parts:
+        return None, []
+    *mods, key = parts
+    for m in mods:
+        if m not in _MODIFIER_NAMES:
+            return None, []
+    if not mods and key in _MODIFIER_KEYCODES:
+        return _MODIFIER_KEYCODES[key], []
+    keycode = (
+        _VIRTUAL_KEYCODES.get(key)
+        or gui_actions._NAMED_KEY_CODES.get(key)
+        or _MODIFIER_KEYCODES.get(key)
+    )
+    if keycode is None:
+        return None, []
+    return keycode, mods
+
+
+def _cg_create_keyboard_event(keycode: int, key_down: bool):
+    """Production CGEvent keyboard factory. Tests monkeypatch this."""
+    from Quartz import CGEventCreateKeyboardEvent  # type: ignore
+
+    return CGEventCreateKeyboardEvent(None, keycode, key_down)
+
+
+def _cg_set_flags(event, flags) -> None:
+    """Production CGEvent flag setter. Tests monkeypatch this."""
+    from Quartz import CGEventSetFlags  # type: ignore
+
+    CGEventSetFlags(event, flags)
+
+
+def _hold_key(spec: str, duration: float) -> bool:
+    """Press the keys in `spec`, hold for `duration` seconds, release.
+
+    Uses CGEvent keyboard events (System Events `keystroke` is atomic and
+    can't hold). Returns False if the spec can't be resolved.
+    """
+    import time
+
+    keycode, mod_names = _resolve_hold_key(spec)
+    if keycode is None:
+        return False
+    try:
+        from Quartz import (  # type: ignore
+            kCGEventFlagMaskAlternate,
+            kCGEventFlagMaskCommand,
+            kCGEventFlagMaskControl,
+            kCGEventFlagMaskShift,
+            kCGHIDEventTap,
+        )
+
+        flag_map = {
+            "cmd": kCGEventFlagMaskCommand,
+            "command": kCGEventFlagMaskCommand,
+            "shift": kCGEventFlagMaskShift,
+            "ctrl": kCGEventFlagMaskControl,
+            "control": kCGEventFlagMaskControl,
+            "alt": kCGEventFlagMaskAlternate,
+            "opt": kCGEventFlagMaskAlternate,
+            "option": kCGEventFlagMaskAlternate,
+        }
+        flags = 0
+        for m in mod_names:
+            flags |= flag_map.get(m, 0)
+
+        down = _cg_create_keyboard_event(keycode, True)
+        if down is None:
+            return False
+        if flags:
+            _cg_set_flags(down, flags)
+        _cg_post_event(kCGHIDEventTap, down)
+
+        time.sleep(max(0.0, duration))
+
+        up = _cg_create_keyboard_event(keycode, False)
+        if up is None:
+            return False
+        if flags:
+            _cg_set_flags(up, flags)
+        _cg_post_event(kCGHIDEventTap, up)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("hold_key failed: %s", e)
+        return False
 
 
 def _execute_action(action: str, params: dict, scale: float) -> dict:
@@ -537,6 +717,21 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
             "type": "text",
             "text": f"dragged from {start} to {end}",
         }
+
+    if action in ("left_mouse_down", "left_mouse_up"):
+        pressed = action == "left_mouse_down"
+        _mouse_button(coord[0], coord[1], scale, pressed=pressed)
+        return {
+            "type": "text",
+            "text": f"{action} at ({coord[0]}, {coord[1]})",
+        }
+
+    if action == "hold_key":
+        spec = _translate_key_spec(str(params.get("text", "")))
+        duration = float(params.get("duration", 1.0))
+        if _hold_key(spec, duration):
+            return {"type": "text", "text": f"held {spec} for {duration}s"}
+        return {"type": "text", "text": f"unsupported key spec: {spec}"}
 
     if action == "type":
         text = str(params.get("text", ""))
