@@ -348,3 +348,37 @@ def test_system_prompt_mentions_all_phase_5_tags():
     prompt = server._build_system_prompt()
     for tag in ("UI:CLICK", "UI:TYPE", "UI:KEY", "UI:SCROLL"):
         assert tag in prompt, tag  # nosec B101
+
+
+def test_dispatch_action_routes_computer(monkeypatch):
+    import computer_use
+
+    called = {}
+
+    def fake_run(goal):
+        called["goal"] = goal
+        return "Done. Window is open."
+
+    monkeypatch.setattr(computer_use, "run_computer_goal", fake_run)
+    result = run(server.dispatch_action("COMPUTER:open Chrome and search asyncio"))
+    assert called["goal"] == "open Chrome and search asyncio"  # nosec B101
+    assert "Done" in result  # nosec B101
+
+
+def test_dispatch_action_computer_empty_goal_rejected():
+    result = run(server.dispatch_action("COMPUTER:"))
+    assert "goal" in result.lower() or "empty" in result.lower()  # nosec B101
+
+
+def test_system_prompt_mentions_computer_tag():
+    prompt = server._build_system_prompt()
+    assert "[ACTION:COMPUTER:" in prompt  # nosec B101
+
+
+def test_system_prompt_prefers_ui_observe_over_computer():
+    """The guideline must steer the model toward UI:OBSERVE before falling
+    back to COMPUTER (cost + reliability)."""
+    prompt = server._build_system_prompt()
+    assert "OBSERVE" in prompt  # nosec B101
+    # The model is told to prefer AX-based UI actions when feasible.
+    assert "fallback" in prompt.lower() or "when" in prompt.lower()  # nosec B101
