@@ -82,3 +82,35 @@ def test_click_finder_menu_via_observe_vocabulary():
     time.sleep(0.3)
     # Dismiss
     gui_actions.send_key("escape")
+
+
+def test_computer_use_round_trip_finder_new_window():
+    """Smoke check: Computer Use can drive a single goal end-to-end.
+
+    Requirements: ANTHROPIC_API_KEY set, Screen Recording permission
+    granted, Accessibility permission granted, network reachable.
+
+    The test focuses Finder, runs a small goal ("open a new Finder
+    window"), and checks that the assistant returned a final answer
+    that doesn't look like an error.
+    """
+    import os
+    import time
+
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        import pytest
+
+        pytest.skip("ANTHROPIC_API_KEY not set — Computer Use cannot run")
+
+    import computer_use
+
+    assert "Focused" in gui_actions.focus_app("Finder")  # nosec B101
+    time.sleep(0.5)
+    result = computer_use.run_computer_goal(
+        "Open a new Finder window using the File menu, then briefly describe what you see."
+    )
+    # We don't assert specific window contents — Finder layout varies.
+    # We just verify the loop terminated with a non-error answer.
+    assert isinstance(result, str)  # nosec B101
+    assert "failed" not in result.lower(), result  # nosec B101
+    assert "exceeded" not in result.lower(), result  # nosec B101
