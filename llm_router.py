@@ -121,11 +121,15 @@ CLI_PROVIDER_NAMES = {
     "gemini": "gemini-cli",
 }
 # Stripped from the CLI subprocess environment so the CLI uses its own login
-# instead of the exhausted API keys. claude/gemini prefer the env key when
-# present (verified); codex ignores it, so removing all four is safe.
+# instead of an exhausted API credential. Each var below was verified to route
+# its CLI to API billing when present: claude honors ANTHROPIC_API_KEY /
+# ANTHROPIC_AUTH_TOKEN, codex honors CODEX_API_KEY (it ignores OPENAI_API_KEY,
+# but scrubbing it is harmless), gemini honors GEMINI_API_KEY / GOOGLE_API_KEY.
 CLI_SCRUBBED_ENV_KEYS = (
     "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
     "OPENAI_API_KEY",
+    "CODEX_API_KEY",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
 )

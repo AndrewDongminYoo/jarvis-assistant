@@ -262,7 +262,9 @@ def test_build_cli_env_strips_api_keys():
     env = build_cli_env(
         {
             "ANTHROPIC_API_KEY": "a",
+            "ANTHROPIC_AUTH_TOKEN": "at",
             "OPENAI_API_KEY": "o",
+            "CODEX_API_KEY": "cx",
             "GEMINI_API_KEY": "g",
             "GOOGLE_API_KEY": "gg",
             "PATH": "/usr/bin",

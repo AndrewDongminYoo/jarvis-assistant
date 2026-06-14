@@ -124,9 +124,10 @@ Behavior and limits:
   its binary is on `PATH`; otherwise it is silently skipped.
 - Ordinary failures (network errors, malformed requests) do **not** trigger the
   CLI fallback — only quota-class errors do.
-- API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`,
-  `GOOGLE_API_KEY`) are removed from the CLI subprocess environment so the CLI
-  uses its own login instead of the exhausted key.
+- API credentials (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `OPENAI_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`) are
+  removed from the CLI subprocess environment so the CLI uses its own login
+  instead of an exhausted key.
 - `max_tokens` and per-task model selection do not apply to CLIs; each CLI uses
   its own default model. The subprocess timeout defaults to 90s
   (`JARVIS_CLI_TIMEOUT`).
