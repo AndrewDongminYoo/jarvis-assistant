@@ -195,12 +195,38 @@ def _image_dims(path: str) -> Optional[tuple[int, int]]:
         return None
 
 
+def _logical_display_size() -> Optional[tuple[int, int]]:
+    """Return the main display's size in *logical points* via Quartz.
+
+    `screencapture` produces an image in physical pixels (2x on a Retina
+    display), but Quartz CGEvent mouse events are posted in the global
+    logical-point coordinate space. The two differ by the backing scale
+    factor (DPR). We need the logical size to map model coordinates back
+    correctly. Separate function so tests can monkeypatch it.
+
+    Returns (width_pt, height_pt) or None on failure.
+    """
+    try:
+        from Quartz import CGDisplayBounds, CGMainDisplayID  # type: ignore
+
+        bounds = CGDisplayBounds(CGMainDisplayID())
+        return int(round(bounds.size.width)), int(round(bounds.size.height))
+    except Exception as e:  # noqa: BLE001
+        log.warning("logical display size probe failed: %s", e)
+        return None
+
+
 def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
     """Capture the main display, downscale if needed, return
     (base64_png, scaled_width, scaled_height, scale_factor).
 
-    `scale_factor = native_dim / scaled_dim` is what later helpers use
-    to map model-supplied coordinates back into real screen pixels.
+    `scale_factor = logical_dim / scaled_dim` maps a model-supplied
+    coordinate (in the downscaled image space we send to the model) back
+    into the global *logical-point* space that Quartz CGEvent mouse
+    events use. On a Retina display the captured image is in physical
+    pixels (e.g. 2880px wide) while CGEvent expects logical points (e.g.
+    1440), so the factor must fold in the backing scale factor — using
+    physical pixels here would post clicks at ~2x the intended position.
 
     Returns None if screencapture fails (Screen Recording permission
     likely missing) or any subprocess raises.
@@ -223,7 +249,6 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
         if dims is None:
             return None
         native_w, native_h = dims
-        scale = 1.0
         scaled_w, scaled_h = native_w, native_h
 
         if max(native_w, native_h) > MAX_SCALED_DIM:
@@ -240,14 +265,25 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
             # preserves aspect ratio. Compute the resulting dims
             # analytically rather than re-probing: the ratio is exact and
             # avoids a second subprocess round-trip.
-            if native_w >= native_h:
-                scale = native_w / MAX_SCALED_DIM
-                scaled_w = MAX_SCALED_DIM
-                scaled_h = round(native_h / scale)
-            else:
-                scale = native_h / MAX_SCALED_DIM
-                scaled_h = MAX_SCALED_DIM
-                scaled_w = round(native_w / scale)
+            ratio = MAX_SCALED_DIM / max(native_w, native_h)
+            scaled_w = (
+                MAX_SCALED_DIM if native_w >= native_h else round(native_w * ratio)
+            )
+            scaled_h = (
+                MAX_SCALED_DIM if native_h > native_w else round(native_h * ratio)
+            )
+
+        # Map the sent-image width to logical points (CGEvent space). The
+        # aspect ratio is preserved across physical -> sent and physical
+        # -> logical, so a single scalar from width suffices.
+        logical = _logical_display_size()
+        if logical is not None and logical[0] > 0:
+            scale = logical[0] / scaled_w
+        else:
+            # No logical size available: assume the capture is already in
+            # logical space (DPR=1). Correct on non-Retina; degraded but
+            # no worse than ignoring DPR on Retina.
+            scale = native_w / scaled_w
 
         with open(path, "rb") as f:
             png_bytes = f.read()

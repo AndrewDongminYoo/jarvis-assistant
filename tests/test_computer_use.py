@@ -52,8 +52,10 @@ def test_capture_screenshot_returns_image_dims_scale(monkeypatch, tmp_path):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    # Native dims and scaled dims come from monkeypatched probes
+    # Physical capture is 2880x1800; the display is a Retina panel whose
+    # logical (point) size is 1440x900 (DPR=2).
     monkeypatch.setattr(computer_use, "_image_dims", lambda _path: (2880, 1800))
+    monkeypatch.setattr(computer_use, "_logical_display_size", lambda: (1440, 900))
 
     out = computer_use._capture_screenshot()
     assert out is not None  # nosec B101
@@ -62,8 +64,10 @@ def test_capture_screenshot_returns_image_dims_scale(monkeypatch, tmp_path):
     assert sw == 1280  # nosec B101
     # scaled height preserves aspect ratio (rounded): 1800 * 1280 / 2880 = 800
     assert sh == 800  # nosec B101
-    # scale factor maps scaled -> native: 2880 / 1280 = 2.25
-    assert abs(scale - 2.25) < 1e-6  # nosec B101
+    # scale maps the sent image (1280) back to logical points (1440), NOT
+    # to physical pixels (2880): 1440 / 1280 = 1.125. Using physical here
+    # would post Retina clicks at ~2x the intended position.
+    assert abs(scale - 1.125) < 1e-6  # nosec B101
 
     # First subprocess call should be `screencapture -x <path>`
     assert runs[0][0] == "screencapture"  # nosec B101
@@ -111,6 +115,8 @@ def test_capture_screenshot_skips_sips_when_image_already_under_cap(
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(computer_use, "_image_dims", lambda _path: (1280, 800))
+    # Non-Retina display (DPR=1): logical points == physical pixels.
+    monkeypatch.setattr(computer_use, "_logical_display_size", lambda: (1280, 800))
 
     out = computer_use._capture_screenshot()
     assert out is not None  # nosec B101
