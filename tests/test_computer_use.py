@@ -398,3 +398,170 @@ def test_execute_action_unknown_returns_error_text():
     )
     assert result["type"] == "text"  # nosec B101
     assert "unsupported" in result["text"].lower() or "unknown" in result["text"].lower()  # nosec B101
+
+
+def test_run_computer_goal_returns_permission_message_when_screenshot_fails(monkeypatch):
+    monkeypatch.setattr(computer_use, "_capture_screenshot", lambda: None)
+    result = computer_use.run_computer_goal("open Chrome")
+    assert "permission" in result.lower() or "screen recording" in result.lower()  # nosec B101
+
+
+def test_run_computer_goal_returns_text_when_model_finishes_without_tool_use(monkeypatch):
+    """If the model returns plain text (no tool_use) on the first turn,
+    `run_computer_goal` returns that text verbatim."""
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+
+    class FakeBlock:
+        def __init__(self, type_, **kwargs):
+            self.type = type_
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    class FakeResponse:
+        def __init__(self):
+            self.stop_reason = "end_turn"
+            self.content = [FakeBlock("text", text="Done. Window is open.")]
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+
+        def create(self, **_kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
+
+    result = computer_use.run_computer_goal("any goal")
+    assert "Done" in result  # nosec B101
+
+
+def test_run_computer_goal_loops_through_tool_use(monkeypatch):
+    """Model emits one tool_use (left_click), then ends with text. The
+    loop must execute the click and produce the final text."""
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+    executed = []
+
+    def fake_execute(action, params, scale):
+        executed.append((action, params, scale))
+        return {"type": "text", "text": "ok"}
+
+    monkeypatch.setattr(computer_use, "_execute_action", fake_execute)
+
+    class FakeBlock:
+        def __init__(self, type_, **kwargs):
+            self.type = type_
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    responses = [
+        # First response: a tool_use call
+        type("R", (), {
+            "stop_reason": "tool_use",
+            "content": [
+                FakeBlock(
+                    "tool_use",
+                    id="t1",
+                    name="computer",
+                    input={"action": "left_click", "coordinate": [100, 100]},
+                ),
+            ],
+        })(),
+        # Second response: final text
+        type("R", (), {
+            "stop_reason": "end_turn",
+            "content": [FakeBlock("text", text="Clicked it.")],
+        })(),
+    ]
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+            self.call_count = 0
+
+        def create(self, **_kwargs):
+            r = responses[self.call_count]
+            self.call_count += 1
+            return r
+
+    monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
+
+    result = computer_use.run_computer_goal("click somewhere")
+    assert executed == [
+        ("left_click", {"action": "left_click", "coordinate": [100, 100]}, 2.0)
+    ]  # nosec B101
+    assert "Clicked it" in result  # nosec B101
+
+
+def test_run_computer_goal_hits_max_turns(monkeypatch):
+    """If the model keeps emitting tool_use beyond MAX_TURNS, the loop
+    bails out with a timeout message."""
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+    monkeypatch.setattr(
+        computer_use,
+        "_execute_action",
+        lambda *_a, **_kw: {"type": "text", "text": "ok"},
+    )
+
+    class FakeBlock:
+        def __init__(self, type_, **kwargs):
+            self.type = type_
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+
+        def create(self, **_kwargs):
+            return type("R", (), {
+                "stop_reason": "tool_use",
+                "content": [
+                    FakeBlock(
+                        "tool_use",
+                        id="t",
+                        name="computer",
+                        input={"action": "wait", "duration": 0.01},
+                    ),
+                ],
+            })()
+
+    monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
+    # Reduce MAX_TURNS for a fast test
+    monkeypatch.setattr(computer_use, "MAX_TURNS", 3)
+    result = computer_use.run_computer_goal("never end")
+    assert "max" in result.lower() or "turn" in result.lower()  # nosec B101
+
+
+def test_run_computer_goal_recovers_on_anthropic_exception(monkeypatch):
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+
+        def create(self, **_kwargs):
+            raise RuntimeError("Anthropic 500")
+
+    monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
+    result = computer_use.run_computer_goal("any")
+    assert "error" in result.lower() or "failed" in result.lower()  # nosec B101

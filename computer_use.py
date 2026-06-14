@@ -37,10 +37,123 @@ def _model() -> str:
     return os.getenv("JARVIS_COMPUTER_MODEL", DEFAULT_MODEL)
 
 
+def _client():
+    """Production Anthropic client factory. Tests monkeypatch this."""
+    import anthropic  # type: ignore
+
+    return anthropic.Anthropic()
+
+
 def run_computer_goal(goal: str) -> str:
-    """Run a Computer Use session for `goal` and return the final
-    narrated result. Filled in by later tasks."""
-    raise NotImplementedError
+    """Drive Anthropic Computer Use until the model produces a final text
+    answer or `MAX_TURNS` triggers. Returns the final spoken result.
+    """
+    if not goal or not goal.strip():
+        return "Missing goal for Computer Use."
+
+    shot = _capture_screenshot()
+    if shot is None:
+        return (
+            "JARVIS needs Screen Recording permission to drive Computer Use. "
+            "Grant it in System Settings > Privacy & Security > "
+            "Screen Recording, then fully quit and relaunch the terminal app."
+        )
+    b64, scaled_w, scaled_h, scale = shot
+
+    tool_def = {
+        "type": COMPUTER_TOOL_TYPE,
+        "name": "computer",
+        "display_width_px": scaled_w,
+        "display_height_px": scaled_h,
+    }
+
+    messages: list[dict] = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": goal.strip()},
+                {
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": b64,
+                    },
+                },
+            ],
+        }
+    ]
+
+    client = _client()
+    current_scale = scale
+
+    for _turn in range(MAX_TURNS):
+        try:
+            response = client.beta.messages.create(
+                model=_model(),
+                max_tokens=MAX_OUTPUT_TOKENS,
+                tools=[tool_def],
+                messages=messages,
+                betas=[COMPUTER_USE_BETA],
+            )
+        except Exception as e:  # noqa: BLE001
+            log.error("Computer Use API call failed: %s", e)
+            return f"Computer Use failed: {e}"
+
+        # Look for a tool_use block first
+        tool_uses = [b for b in response.content if getattr(b, "type", "") == "tool_use"]
+        if not tool_uses:
+            # No tool calls — model produced final text
+            texts = [
+                getattr(b, "text", "")
+                for b in response.content
+                if getattr(b, "type", "") == "text"
+            ]
+            return "\n".join(t for t in texts if t).strip() or "Done."
+
+        # Execute every tool_use in order, build the tool_result message
+        tool_results: list[dict] = []
+        for tu in tool_uses:
+            params = getattr(tu, "input", {}) or {}
+            action = params.get("action", "")
+            outcome = _execute_action(
+                action=action, params=params, scale=current_scale
+            )
+            if outcome.get("type") == "image":
+                current_scale = outcome.get("scale", current_scale)
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": outcome["data"],
+                                },
+                            }
+                        ],
+                    }
+                )
+            else:
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tu.id,
+                        "content": outcome["text"],
+                    }
+                )
+
+        # Append assistant turn (the tool_use response) and our results
+        messages.append({"role": "assistant", "content": response.content})
+        messages.append({"role": "user", "content": tool_results})
+
+    return (
+        f"Computer Use exceeded the {MAX_TURNS}-turn cap without finishing. "
+        "Last action may have partially completed."
+    )
 
 
 def _screenshot_path() -> str:
