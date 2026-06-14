@@ -109,6 +109,7 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:UI:TYPE:text]                  — type the given text into the focused field
   [ACTION:UI:KEY:cmd+t]                  — send a keystroke (cmd/shift/alt/ctrl + char or named key)
   [ACTION:UI:SCROLL:direction::amount]   — scroll the frontmost window (direction: up|down|left|right, amount: lines)
+  [ACTION:COMPUTER:goal]                 — vision-grounded fallback (Anthropic Computer Use); use only when UI:* can't reach the target
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
   [ACTION:RECALL:query]                  — search prior conversation
@@ -116,7 +117,7 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:TASK:LIST]                     — list pending tasks
   [ACTION:TASK:DONE:task_id]             — mark a task as done
 
-Prefer UI:OBSERVE before acting on UI. The click target's role/label come from the OBSERVE output's vocabulary.
+Prefer UI:OBSERVE before acting on UI. The click target's role/label come from the OBSERVE output's vocabulary. Reach for COMPUTER only when the app doesn't expose AX (Figma canvases, web embeds, games) — it is slower and costlier than UI:* and runs the screen, so reserve it for genuine fallbacks.
 {facts_block}
 """
 
@@ -360,6 +361,17 @@ async def dispatch_action(tag: str) -> str:
                 return f"UI:SCROLL amount must be an integer, got '{amount_str}'."
             return await asyncio.to_thread(scroll, direction.strip(), amount)
         return f"Unknown UI action: {sub}"
+
+    if kind == "COMPUTER":
+        from computer_use import run_computer_goal
+
+        goal = parts[1] if len(parts) > 1 else ""
+        if len(parts) > 2:
+            goal = goal + ":" + parts[2]
+        goal = goal.strip()
+        if not goal:
+            return "COMPUTER needs a non-empty goal."
+        return await asyncio.to_thread(run_computer_goal, goal)
 
     return f"Unknown action: {kind}"
 
