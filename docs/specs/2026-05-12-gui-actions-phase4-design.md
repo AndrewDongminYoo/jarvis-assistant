@@ -187,8 +187,7 @@ distinct from its label, the format extends to:
 text_field "Search" "current value"
 ```
 
-If `AXEnabled` is `False`, append ` [disabled]`. Enabled is the default and
-not annotated.
+If `AXEnabled` is `False`, append `[disabled]`. Enabled is the default and not annotated.
 
 ### Limits
 
