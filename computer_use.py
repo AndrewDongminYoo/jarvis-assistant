@@ -101,7 +101,9 @@ def run_computer_goal(goal: str) -> str:
             return f"Computer Use failed: {e}"
 
         # Look for a tool_use block first
-        tool_uses = [b for b in response.content if getattr(b, "type", "") == "tool_use"]
+        tool_uses = [
+            b for b in response.content if getattr(b, "type", "") == "tool_use"
+        ]
         if not tool_uses:
             # No tool calls — model produced final text
             texts = [
@@ -116,9 +118,7 @@ def run_computer_goal(goal: str) -> str:
         for tu in tool_uses:
             params = getattr(tu, "input", {}) or {}
             action = params.get("action", "")
-            outcome = _execute_action(
-                action=action, params=params, scale=current_scale
-            )
+            outcome = _execute_action(action=action, params=params, scale=current_scale)
             if outcome.get("type") == "image":
                 current_scale = outcome.get("scale", current_scale)
                 tool_results.append(
@@ -330,7 +330,11 @@ def _mouse_click(
 
         mapping = {
             "left": (kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonLeft),
-            "right": (kCGEventRightMouseDown, kCGEventRightMouseUp, kCGMouseButtonRight),
+            "right": (
+                kCGEventRightMouseDown,
+                kCGEventRightMouseUp,
+                kCGMouseButtonRight,
+            ),
             "middle": (
                 kCGEventOtherMouseDown,
                 kCGEventOtherMouseUp,
@@ -466,7 +470,13 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
         _mouse_move(coord[0], coord[1], scale)
         return {"type": "text", "text": f"moved cursor to ({coord[0]}, {coord[1]})"}
 
-    if action in ("left_click", "right_click", "middle_click", "double_click", "triple_click"):
+    if action in (
+        "left_click",
+        "right_click",
+        "middle_click",
+        "double_click",
+        "triple_click",
+    ):
         button = "left"
         count = 1
         if action == "right_click":
@@ -501,9 +511,7 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
     if action == "key":
         spec = _translate_key_spec(str(params.get("text", "")))
         char, key_code, modifiers = gui_actions._parse_key_spec(spec)
-        mod_clause = (
-            " using {" + ", ".join(modifiers) + "}" if modifiers else ""
-        )
+        mod_clause = " using {" + ", ".join(modifiers) + "}" if modifiers else ""
         if char is not None:
             applescript = f'keystroke "{char}"' + mod_clause
         elif key_code is not None:

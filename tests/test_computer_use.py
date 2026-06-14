@@ -1,5 +1,7 @@
+import base64
 import sys
 from pathlib import Path
+from unittest.mock import MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -27,10 +29,6 @@ def test_default_model_honors_env_override(monkeypatch):
     assert computer_use._model() == "claude-opus-4-7-20251015"  # nosec B101
 
 
-import base64
-from unittest.mock import MagicMock
-
-
 def test_capture_screenshot_returns_image_dims_scale(monkeypatch, tmp_path):
     """Happy path: screencapture + sips succeed, helper returns
     (b64_png, scaled_w, scaled_h, scale_factor)."""
@@ -55,9 +53,7 @@ def test_capture_screenshot_returns_image_dims_scale(monkeypatch, tmp_path):
     monkeypatch.setattr(subprocess, "run", fake_run)
 
     # Native dims and scaled dims come from monkeypatched probes
-    monkeypatch.setattr(
-        computer_use, "_image_dims", lambda _path: (2880, 1800)
-    )
+    monkeypatch.setattr(computer_use, "_image_dims", lambda _path: (2880, 1800))
 
     out = computer_use._capture_screenshot()
     assert out is not None  # nosec B101
@@ -90,13 +86,13 @@ def test_capture_screenshot_returns_none_when_screencapture_fails(monkeypatch):
         return result
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        computer_use, "_screenshot_path", lambda: "/tmp/nope.png"
-    )
+    monkeypatch.setattr(computer_use, "_screenshot_path", lambda: "/tmp/nope.png")
     assert computer_use._capture_screenshot() is None  # nosec B101
 
 
-def test_capture_screenshot_skips_sips_when_image_already_under_cap(monkeypatch, tmp_path):
+def test_capture_screenshot_skips_sips_when_image_already_under_cap(
+    monkeypatch, tmp_path
+):
     """Don't bother running sips if the native screen is already at or
     under MAX_SCALED_DIM on the longest edge."""
     fake_png = tmp_path / "fake.png"
@@ -114,9 +110,7 @@ def test_capture_screenshot_skips_sips_when_image_already_under_cap(monkeypatch,
     import subprocess
 
     monkeypatch.setattr(subprocess, "run", fake_run)
-    monkeypatch.setattr(
-        computer_use, "_image_dims", lambda _path: (1280, 800)
-    )
+    monkeypatch.setattr(computer_use, "_image_dims", lambda _path: (1280, 800))
 
     out = computer_use._capture_screenshot()
     assert out is not None  # nosec B101
@@ -138,9 +132,7 @@ def test_mouse_click_posts_down_then_up_at_scaled_coords(monkeypatch):
     def fake_post(_tap, event):
         posted.append(event)
 
-    monkeypatch.setattr(
-        computer_use, "_cg_create_mouse_event", fake_create
-    )
+    monkeypatch.setattr(computer_use, "_cg_create_mouse_event", fake_create)
     monkeypatch.setattr(computer_use, "_cg_post_event", fake_post)
 
     # scale_factor=2 → scaled (100, 50) maps to native (200, 100)
@@ -346,14 +338,10 @@ def test_execute_action_key_translates_xdotool_aliases(monkeypatch):
         lambda action: sent.append(action) or True,
     )
     # xdotool "Return" → our parser "return" → AppleScript key code 36
-    computer_use._execute_action(
-        action="key", params={"text": "Return"}, scale=1.0
-    )
+    computer_use._execute_action(action="key", params={"text": "Return"}, scale=1.0)
     assert sent[-1] == "key code 36"  # nosec B101
     # cmd+t → keystroke "t" using {command down}
-    computer_use._execute_action(
-        action="key", params={"text": "cmd+t"}, scale=1.0
-    )
+    computer_use._execute_action(action="key", params={"text": "cmd+t"}, scale=1.0)
     assert sent[-1] == 'keystroke "t" using {command down}'  # nosec B101
 
 
@@ -382,9 +370,7 @@ def test_execute_action_wait_sleeps(monkeypatch):
     import time
 
     slept = {}
-    monkeypatch.setattr(
-        time, "sleep", lambda secs: slept.update(secs=secs) or None
-    )
+    monkeypatch.setattr(time, "sleep", lambda secs: slept.update(secs=secs) or None)
     result = computer_use._execute_action(
         action="wait", params={"duration": 0.5}, scale=1.0
     )
@@ -393,20 +379,26 @@ def test_execute_action_wait_sleeps(monkeypatch):
 
 
 def test_execute_action_unknown_returns_error_text():
-    result = computer_use._execute_action(
-        action="moonwalk", params={}, scale=1.0
-    )
+    result = computer_use._execute_action(action="moonwalk", params={}, scale=1.0)
     assert result["type"] == "text"  # nosec B101
-    assert "unsupported" in result["text"].lower() or "unknown" in result["text"].lower()  # nosec B101
+    assert (
+        "unsupported" in result["text"].lower() or "unknown" in result["text"].lower()
+    )  # nosec B101
 
 
-def test_run_computer_goal_returns_permission_message_when_screenshot_fails(monkeypatch):
+def test_run_computer_goal_returns_permission_message_when_screenshot_fails(
+    monkeypatch,
+):
     monkeypatch.setattr(computer_use, "_capture_screenshot", lambda: None)
     result = computer_use.run_computer_goal("open Chrome")
-    assert "permission" in result.lower() or "screen recording" in result.lower()  # nosec B101
+    assert (
+        "permission" in result.lower() or "screen recording" in result.lower()
+    )  # nosec B101
 
 
-def test_run_computer_goal_returns_text_when_model_finishes_without_tool_use(monkeypatch):
+def test_run_computer_goal_returns_text_when_model_finishes_without_tool_use(
+    monkeypatch,
+):
     """If the model returns plain text (no tool_use) on the first turn,
     `run_computer_goal` returns that text verbatim."""
     monkeypatch.setattr(
@@ -464,22 +456,30 @@ def test_run_computer_goal_loops_through_tool_use(monkeypatch):
 
     responses = [
         # First response: a tool_use call
-        type("R", (), {
-            "stop_reason": "tool_use",
-            "content": [
-                FakeBlock(
-                    "tool_use",
-                    id="t1",
-                    name="computer",
-                    input={"action": "left_click", "coordinate": [100, 100]},
-                ),
-            ],
-        })(),
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "tool_use",
+                "content": [
+                    FakeBlock(
+                        "tool_use",
+                        id="t1",
+                        name="computer",
+                        input={"action": "left_click", "coordinate": [100, 100]},
+                    ),
+                ],
+            },
+        )(),
         # Second response: final text
-        type("R", (), {
-            "stop_reason": "end_turn",
-            "content": [FakeBlock("text", text="Clicked it.")],
-        })(),
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "end_turn",
+                "content": [FakeBlock("text", text="Clicked it.")],
+            },
+        )(),
     ]
 
     class FakeClient:
@@ -528,17 +528,21 @@ def test_run_computer_goal_hits_max_turns(monkeypatch):
             self.messages = self
 
         def create(self, **_kwargs):
-            return type("R", (), {
-                "stop_reason": "tool_use",
-                "content": [
-                    FakeBlock(
-                        "tool_use",
-                        id="t",
-                        name="computer",
-                        input={"action": "wait", "duration": 0.01},
-                    ),
-                ],
-            })()
+            return type(
+                "R",
+                (),
+                {
+                    "stop_reason": "tool_use",
+                    "content": [
+                        FakeBlock(
+                            "tool_use",
+                            id="t",
+                            name="computer",
+                            input={"action": "wait", "duration": 0.01},
+                        ),
+                    ],
+                },
+            )()
 
     monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
     # Reduce MAX_TURNS for a fast test
