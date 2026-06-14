@@ -125,3 +125,87 @@ def test_capture_screenshot_skips_sips_when_image_already_under_cap(monkeypatch,
     # screencapture ran but sips did not
     assert "screencapture" in runs  # nosec B101
     assert "sips" not in runs  # nosec B101
+
+
+def test_mouse_click_posts_down_then_up_at_scaled_coords(monkeypatch):
+    """Coordinates are in scaled-screenshot space; the helper must
+    multiply by scale_factor before posting CGEvents."""
+    posted = []
+
+    def fake_create(_src, event_type, point, _button):
+        return ("event", event_type, point)
+
+    def fake_post(_tap, event):
+        posted.append(event)
+
+    monkeypatch.setattr(
+        computer_use, "_cg_create_mouse_event", fake_create
+    )
+    monkeypatch.setattr(computer_use, "_cg_post_event", fake_post)
+
+    # scale_factor=2 → scaled (100, 50) maps to native (200, 100)
+    ok = computer_use._mouse_click(100, 50, scale=2.0, button="left")
+    assert ok is True  # nosec B101
+    assert len(posted) == 2  # down + up  # nosec B101
+    _t1, event_type_down, point_down = posted[0]
+    _t2, event_type_up, point_up = posted[1]
+    assert point_down == (200.0, 100.0)  # nosec B101
+    assert point_up == (200.0, 100.0)  # nosec B101
+    # Down before Up
+    assert event_type_down != event_type_up  # nosec B101
+
+
+def test_mouse_click_supports_right_and_double(monkeypatch):
+    posted = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_mouse_event",
+        lambda _s, t, p, _b: ("event", t, p),
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, event: posted.append(event)
+    )
+    # Right-click: 1 down + 1 up
+    computer_use._mouse_click(10, 10, scale=1.0, button="right")
+    assert len(posted) == 2  # nosec B101
+    posted.clear()
+    # Double-click: 2 down + 2 up
+    computer_use._mouse_click(10, 10, scale=1.0, button="left", count=2)
+    assert len(posted) == 4  # nosec B101
+
+
+def test_mouse_move_posts_single_moved_event(monkeypatch):
+    posted = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_mouse_event",
+        lambda _s, t, p, _b: ("event", t, p),
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, event: posted.append(event)
+    )
+    ok = computer_use._mouse_move(50, 25, scale=2.0)
+    assert ok is True  # nosec B101
+    assert len(posted) == 1  # nosec B101
+    _kind, _t, point = posted[0]
+    assert point == (100.0, 50.0)  # nosec B101
+
+
+def test_mouse_drag_posts_down_move_up(monkeypatch):
+    posted = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_mouse_event",
+        lambda _s, t, p, _b: ("event", t, p),
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, event: posted.append(event)
+    )
+    ok = computer_use._mouse_drag(0, 0, 100, 50, scale=1.0)
+    assert ok is True  # nosec B101
+    # 1 down at start, 1 drag move to end, 1 up at end
+    assert len(posted) >= 3  # nosec B101
+    _k_first, _t_first, p_first = posted[0]
+    _k_last, _t_last, p_last = posted[-1]
+    assert p_first == (0.0, 0.0)  # nosec B101
+    assert p_last == (100.0, 50.0)  # nosec B101

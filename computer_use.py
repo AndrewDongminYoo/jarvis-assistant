@@ -148,3 +148,137 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
             os.remove(path)
         except OSError:
             pass
+
+
+def _cg_create_mouse_event(source, event_type, point, button):
+    """Production CGEvent factory. Tests monkeypatch this."""
+    from Quartz import CGEventCreateMouseEvent  # type: ignore
+
+    return CGEventCreateMouseEvent(source, event_type, point, button)
+
+
+def _cg_post_event(tap, event) -> None:
+    """Production CGEvent poster. Tests monkeypatch this."""
+    from Quartz import CGEventPost  # type: ignore
+
+    CGEventPost(tap, event)
+
+
+def _mouse_move(x: float, y: float, scale: float) -> bool:
+    """Post a mouse-move event at scaled coordinate (x, y).
+
+    Multiplies by `scale` to recover real-screen pixels.
+    """
+    try:
+        from Quartz import (  # type: ignore
+            kCGEventMouseMoved,
+            kCGHIDEventTap,
+            kCGMouseButtonLeft,
+        )
+
+        native = (x * scale, y * scale)
+        event = _cg_create_mouse_event(
+            None, kCGEventMouseMoved, native, kCGMouseButtonLeft
+        )
+        if event is None:
+            return False
+        _cg_post_event(kCGHIDEventTap, event)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("mouse_move failed: %s", e)
+        return False
+
+
+def _mouse_click(
+    x: float,
+    y: float,
+    scale: float,
+    button: str = "left",
+    count: int = 1,
+) -> bool:
+    """Post `count` click cycles (down+up) at scaled coordinate (x, y).
+
+    button ∈ {"left", "right", "middle"}; default left. count ≥ 1 for
+    single/double/triple clicks.
+    """
+    try:
+        from Quartz import (  # type: ignore
+            kCGEventLeftMouseDown,
+            kCGEventLeftMouseUp,
+            kCGEventOtherMouseDown,
+            kCGEventOtherMouseUp,
+            kCGEventRightMouseDown,
+            kCGEventRightMouseUp,
+            kCGHIDEventTap,
+            kCGMouseButtonCenter,
+            kCGMouseButtonLeft,
+            kCGMouseButtonRight,
+        )
+
+        mapping = {
+            "left": (kCGEventLeftMouseDown, kCGEventLeftMouseUp, kCGMouseButtonLeft),
+            "right": (kCGEventRightMouseDown, kCGEventRightMouseUp, kCGMouseButtonRight),
+            "middle": (
+                kCGEventOtherMouseDown,
+                kCGEventOtherMouseUp,
+                kCGMouseButtonCenter,
+            ),
+        }
+        down, up, btn = mapping.get(button, mapping["left"])
+        native = (x * scale, y * scale)
+        for _ in range(max(1, count)):
+            d = _cg_create_mouse_event(None, down, native, btn)
+            if d is None:
+                return False
+            _cg_post_event(kCGHIDEventTap, d)
+            u = _cg_create_mouse_event(None, up, native, btn)
+            if u is None:
+                return False
+            _cg_post_event(kCGHIDEventTap, u)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("mouse_click failed: %s", e)
+        return False
+
+
+def _mouse_drag(
+    start_x: float,
+    start_y: float,
+    end_x: float,
+    end_y: float,
+    scale: float,
+) -> bool:
+    """Press at start, drag to end, release. Scaled coordinates."""
+    try:
+        from Quartz import (  # type: ignore
+            kCGEventLeftMouseDown,
+            kCGEventLeftMouseDragged,
+            kCGEventLeftMouseUp,
+            kCGHIDEventTap,
+            kCGMouseButtonLeft,
+        )
+
+        start_native = (start_x * scale, start_y * scale)
+        end_native = (end_x * scale, end_y * scale)
+        down = _cg_create_mouse_event(
+            None, kCGEventLeftMouseDown, start_native, kCGMouseButtonLeft
+        )
+        if down is None:
+            return False
+        _cg_post_event(kCGHIDEventTap, down)
+        moved = _cg_create_mouse_event(
+            None, kCGEventLeftMouseDragged, end_native, kCGMouseButtonLeft
+        )
+        if moved is None:
+            return False
+        _cg_post_event(kCGHIDEventTap, moved)
+        up = _cg_create_mouse_event(
+            None, kCGEventLeftMouseUp, end_native, kCGMouseButtonLeft
+        )
+        if up is None:
+            return False
+        _cg_post_event(kCGHIDEventTap, up)
+        return True
+    except Exception as e:  # noqa: BLE001
+        log.warning("mouse_drag failed: %s", e)
+        return False
