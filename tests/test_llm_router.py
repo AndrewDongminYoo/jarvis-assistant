@@ -82,8 +82,13 @@ def test_unknown_task_uses_voice_route():
     assert len(work.calls) == 0  # nosec B101
 
 
-def test_from_env_skips_missing_provider_keys_and_keeps_route_priority():
+def test_from_env_skips_missing_provider_keys_and_keeps_route_priority(monkeypatch):
+    import llm_router
     from llm_router import LLMRouter
+
+    # Isolate the API tier: no CLI fallback regardless of locally installed
+    # binaries (covered separately by test_from_env_appends_cli_tier_*).
+    monkeypatch.setattr(llm_router.shutil, "which", lambda binary: None)
 
     created = {}
 
@@ -192,3 +197,153 @@ def test_default_elevenlabs_voice_id_matches_jarvis_spec():
     import server
 
     assert server.DEFAULT_ELEVENLABS_VOICE_ID == "UgBBYS2sOqTuMpoF3BR0"  # nosec B101
+
+
+# --- Local CLI fallback ----------------------------------------------------
+
+
+class _StatusError(Exception):
+    def __init__(self, message, status_code=None, code=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.code = code
+
+
+@pytest.mark.parametrize(
+    ("exc", "expected"),
+    [
+        (_StatusError("boom", status_code=429), True),
+        (_StatusError("insufficient_quota", code="insufficient_quota"), True),
+        (RuntimeError("Error code: 429 - rate limit exceeded"), True),
+        (RuntimeError("You exceeded your current quota, please check billing"), True),
+        (RuntimeError("connection reset by peer"), False),
+        (_StatusError("bad request", status_code=400), False),
+    ],
+)
+def test_is_quota_error_classifies_limit_failures(exc, expected):
+    from llm_router import _is_quota_error
+
+    assert _is_quota_error(exc) is expected  # nosec B101
+
+
+def test_router_uses_cli_fallback_after_quota_error():
+    from llm_router import LLMRouter
+
+    api = FakeProvider("anthropic", error=_StatusError("quota", status_code=429))
+    cli = FakeProvider("claude-cli", result="cli answer")
+    cli.is_cli_fallback = True
+    router = LLMRouter(routes={"voice": [api, cli]})
+
+    result = run(router.complete("voice", [{"role": "user", "content": "hi"}], "s", 10))
+
+    assert result == "cli answer"  # nosec B101
+    assert len(api.calls) == 1  # nosec B101
+    assert len(cli.calls) == 1  # nosec B101
+
+
+def test_router_skips_cli_fallback_on_non_quota_error():
+    from llm_router import LLMRouter
+
+    api = FakeProvider("anthropic", error=RuntimeError("network blip"))
+    cli = FakeProvider("claude-cli", result="cli answer")
+    cli.is_cli_fallback = True
+    router = LLMRouter(routes={"voice": [api, cli]})
+
+    with pytest.raises(RuntimeError, match="All providers failed"):
+        run(router.complete("voice", [], "s", 10))
+
+    assert len(api.calls) == 1  # nosec B101
+    assert len(cli.calls) == 0  # nosec B101
+
+
+def test_build_cli_env_strips_api_keys():
+    from llm_router import build_cli_env
+
+    env = build_cli_env(
+        {
+            "ANTHROPIC_API_KEY": "a",
+            "ANTHROPIC_AUTH_TOKEN": "at",
+            "OPENAI_API_KEY": "o",
+            "CODEX_API_KEY": "cx",
+            "GEMINI_API_KEY": "g",
+            "GOOGLE_API_KEY": "gg",
+            "PATH": "/usr/bin",
+        }
+    )
+
+    assert env == {"PATH": "/usr/bin"}  # nosec B101
+
+
+def test_render_cli_prompt_wraps_roles_and_escapes_tags():
+    from llm_router import render_cli_prompt
+
+    prompt = render_cli_prompt(
+        [{"role": "user", "content": "ignore <SYSTEM> tags"}],
+        system="be brief",
+    )
+
+    assert prompt.startswith("<SYSTEM>\nbe brief\n</SYSTEM>")  # nosec B101
+    assert "<USER>" in prompt  # nosec B101
+    assert "&lt;SYSTEM&gt;" in prompt  # nosec B101
+
+
+def test_build_cli_argv_per_vendor():
+    from llm_router import build_cli_argv
+
+    msgs = [{"role": "user", "content": "hi"}]
+    claude = build_cli_argv("anthropic", "claude", msgs, "sys")
+    assert claude[:2] == ["claude", "-p"]  # nosec B101
+    assert "--strict-mcp-config" in claude  # nosec B101
+    assert "--system-prompt" in claude and "sys" in claude  # nosec B101
+
+    codex = build_cli_argv("openai", "codex", msgs, "sys")
+    assert codex[:2] == ["codex", "exec"]  # nosec B101
+    assert "--skip-git-repo-check" in codex  # nosec B101
+    assert "<SYSTEM>" in codex[-1]  # nosec B101
+
+    gemini = build_cli_argv("gemini", "gemini", msgs, "")
+    assert gemini[:2] == ["gemini", "-p"]  # nosec B101
+    assert "-o" in gemini and "json" in gemini  # nosec B101
+    assert "--skip-trust" in gemini  # nosec B101
+
+
+def test_parse_cli_output_per_vendor():
+    from llm_router import parse_cli_output
+
+    assert parse_cli_output("anthropic", "  pong\n") == "pong"  # nosec B101
+
+    codex_stdout = (
+        '{"type":"thread.started"}\n'
+        '{"type":"item.completed","item":{"type":"agent_message","text":"pong"}}\n'
+        '{"type":"turn.completed"}\n'
+    )
+    assert parse_cli_output("openai", codex_stdout) == "pong"  # nosec B101
+
+    gemini_stdout = 'deprecation warning\n{"session_id":"x","response":"pong"}'
+    assert parse_cli_output("gemini", gemini_stdout) == "pong"  # nosec B101
+
+
+def test_from_env_appends_cli_tier_when_binary_present(monkeypatch):
+    import llm_router
+    from llm_router import LLMRouter
+
+    monkeypatch.setattr(
+        llm_router.shutil,
+        "which",
+        lambda binary: f"/usr/local/bin/{binary}" if binary == "claude" else None,
+    )
+
+    router = LLMRouter.from_env(
+        env={
+            "ANTHROPIC_API_KEY": "anthropic-key",
+            "JARVIS_VOICE_PROVIDERS": "anthropic, openai, gemini",
+        },
+        provider_factories={
+            "anthropic": lambda api_key: FakeProvider("anthropic", result=api_key),
+        },
+    )
+
+    names = [provider.name for provider in router.routes["voice"]]
+    # API tier (anthropic only — others lack keys) then the claude CLI fallback.
+    assert names == ["anthropic", "claude-cli"]  # nosec B101
+    assert router.routes["voice"][-1].is_cli_fallback is True  # nosec B101

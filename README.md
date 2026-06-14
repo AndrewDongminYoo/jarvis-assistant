@@ -101,6 +101,37 @@ Default provider order per task:
 Providers without API keys are skipped. Failed providers are logged and the
 router falls back to the next configured provider.
 
+#### Local CLI fallback
+
+When every API provider for a task fails and at least one failure is a
+quota/credit/rate-limit error (HTTP 429, `insufficient_quota`, billing), the
+router falls back to a locally installed coding-assistant CLI that
+authenticates through your own subscription login — separate from the
+exhausted API billing:
+
+| API vendor | CLI binary | Invocation                                        |
+| ---------- | ---------- | ------------------------------------------------- |
+| Anthropic  | `claude`   | `claude -p --strict-mcp-config --system-prompt …` |
+| OpenAI     | `codex`    | `codex exec --skip-git-repo-check --json …`       |
+| Gemini     | `gemini`   | `gemini -p … -o json --skip-trust`                |
+
+The fallback runs each CLI in a neutral temp directory (no project context),
+disabling MCP and the trust/git-repo checks, so it stays fast and isolated.
+
+Behavior and limits:
+
+- The CLI tier follows the same per-task vendor order. A CLI is used only if
+  its binary is on `PATH`; otherwise it is silently skipped.
+- Ordinary failures (network errors, malformed requests) do **not** trigger the
+  CLI fallback — only quota-class errors do.
+- API credentials (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`,
+  `OPENAI_API_KEY`, `CODEX_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_API_KEY`) are
+  removed from the CLI subprocess environment so the CLI uses its own login
+  instead of an exhausted key.
+- `max_tokens` and per-task model selection do not apply to CLIs; each CLI uses
+  its own default model. The subprocess timeout defaults to 90s
+  (`JARVIS_CLI_TIMEOUT`).
+
 Server logs must show:
 
 - task type
@@ -216,6 +247,9 @@ JARVIS_VOICE_PROVIDERS=anthropic,openai,gemini
 JARVIS_WORK_PROVIDERS=openai,anthropic,gemini
 JARVIS_PLAN_PROVIDERS=anthropic,openai,gemini
 JARVIS_NARRATE_PROVIDERS=anthropic,openai,gemini
+
+# Optional. Timeout (seconds) for the local CLI fallback subprocess.
+JARVIS_CLI_TIMEOUT=90
 
 # Optional.
 USER_NAME=Andrew
