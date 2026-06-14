@@ -126,26 +126,32 @@ response when system access is needed. The backend strips the tag from spoken
 output, runs the integration, then re-asks the router (`narrate` task) for a
 1–2 sentence spoken summary of the result.
 
-| Tag                                    | Effect                                       |
-| -------------------------------------- | -------------------------------------------- |
-| `[ACTION:CALENDAR]`                    | Upcoming events from Apple Calendar          |
-| `[ACTION:MAIL]`                        | Unread mail summary from Apple Mail          |
-| `[ACTION:MAIL:SEARCH:query]`           | Search mail by subject/sender                |
-| `[ACTION:NOTES:LIST]`                  | List Apple Notes titles                      |
-| `[ACTION:NOTES:READ:title]`            | Read a note body                             |
-| `[ACTION:NOTES:CREATE:title::content]` | Create a new note                            |
-| `[ACTION:TERMINAL:command]`            | Open Terminal and run a command              |
-| `[ACTION:BROWSE:url]`                  | Browse a URL via Playwright                  |
-| `[ACTION:SEARCH:query]`                | Web search summary                           |
-| `[ACTION:WORK:task]`                   | Dispatch a task to Claude Code               |
-| `[ACTION:PLAN:description]`            | Start a planning session with clarifying Qs  |
-| `[ACTION:PLAN_ANSWER:task::answers]`   | Produce numbered plan once user has answered |
-| `[ACTION:REMEMBER:fact]`               | Persist a user fact to memory                |
-| `[ACTION:FORGET:fact_id]`              | Delete a stored fact by ID                   |
-| `[ACTION:RECALL:query]`                | Full-text search prior conversation          |
-| `[ACTION:TASK:CREATE:title]`           | Add a pending task                           |
-| `[ACTION:TASK:LIST]`                   | List pending tasks                           |
-| `[ACTION:TASK:DONE:task_id]`           | Mark a task as done                          |
+| Tag                                    | Effect                                        |
+| -------------------------------------- | --------------------------------------------- |
+| `[ACTION:CALENDAR]`                    | Upcoming events from Apple Calendar           |
+| `[ACTION:MAIL]`                        | Unread mail summary from Apple Mail           |
+| `[ACTION:MAIL:SEARCH:query]`           | Search mail by subject/sender                 |
+| `[ACTION:NOTES:LIST]`                  | List Apple Notes titles                       |
+| `[ACTION:NOTES:READ:title]`            | Read a note body                              |
+| `[ACTION:NOTES:CREATE:title::content]` | Create a new note                             |
+| `[ACTION:TERMINAL:command]`            | Open Terminal and run a command               |
+| `[ACTION:BROWSE:url]`                  | Browse a URL via Playwright                   |
+| `[ACTION:SEARCH:query]`                | Web search summary                            |
+| `[ACTION:WORK:task]`                   | Dispatch a task to Claude Code                |
+| `[ACTION:PLAN:description]`            | Start a planning session with clarifying Qs   |
+| `[ACTION:PLAN_ANSWER:task::answers]`   | Produce numbered plan once user has answered  |
+| `[ACTION:UI:FOCUS:app_name]`           | Activate an app (Chrome, Slack, Mail…)        |
+| `[ACTION:UI:OBSERVE]`                  | Read the frontmost app's UI tree              |
+| `[ACTION:UI:CLICK:role::label]`        | Click a tier-A element by OBSERVE role/label  |
+| `[ACTION:UI:TYPE:text]`                | Type text into the focused field              |
+| `[ACTION:UI:KEY:cmd+t]`                | Send a keystroke (modifiers + char/named key) |
+| `[ACTION:UI:SCROLL:direction::amount]` | Scroll the frontmost window (up/down/L/R)     |
+| `[ACTION:REMEMBER:fact]`               | Persist a user fact to memory                 |
+| `[ACTION:FORGET:fact_id]`              | Delete a stored fact by ID                    |
+| `[ACTION:RECALL:query]`                | Full-text search prior conversation           |
+| `[ACTION:TASK:CREATE:title]`           | Add a pending task                            |
+| `[ACTION:TASK:LIST]`                   | List pending tasks                            |
+| `[ACTION:TASK:DONE:task_id]`           | Mark a task as done                           |
 
 Stored facts are injected back into the system prompt on every turn, so the
 assistant remains personalized across sessions.
