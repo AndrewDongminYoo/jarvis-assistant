@@ -7,10 +7,11 @@ import logging
 import os
 import re
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import httpx
 from dotenv import load_dotenv
@@ -187,28 +188,61 @@ ACTION_RE = re.compile(r"\[ACTION:([^\]]+)\]")
 MAX_STEPS = 5
 
 
+@dataclass(frozen=True)
+class ActionResult:
+    text: str
+    status: Literal["completed", "failed", "blocked"] = "completed"
+
+
+StepCallback = Callable[[str, ActionResult], Awaitable[None]]
+
+
+def _step_kind(tag: str) -> str:
+    head, _, tail = tag.partition(":")
+    if head.upper() == "UI" and tail:
+        sub, _, _rest = tail.partition(":")
+        return f"UI:{sub.upper()}"
+    return head.upper()
+
+
+def _step_summary(tag: str, result: ActionResult) -> str:
+    kind = _step_kind(tag)
+    if result.status == "blocked":
+        return f"{kind} blocked."
+    if result.status == "failed":
+        return f"{kind} failed."
+    return f"{kind} completed."
+
+
 async def dispatch_action(tag: str) -> str:
+    return (await _dispatch_action_result(tag)).text
+
+
+async def _dispatch_action_result(tag: str) -> ActionResult:
     parts = tag.split(":", 2)
     kind = parts[0].upper()
 
     if kind == "CALENDAR":
         from calendar_access import get_events_summary
 
-        return await asyncio.to_thread(get_events_summary)
+        return ActionResult(await asyncio.to_thread(get_events_summary))
 
     if kind == "MAIL":
-        if len(parts) >= 3 and parts[1].upper() == "SEARCH":
+        sub = parts[1].upper() if len(parts) > 1 else ""
+        if not sub:
+            from mail_access import get_mail_summary
+
+            return ActionResult(await asyncio.to_thread(get_mail_summary))
+        if len(parts) >= 3 and sub == "SEARCH":
             from mail_access import search_mail
 
             items = await asyncio.to_thread(search_mail, parts[2])
-            return (
+            return ActionResult(
                 "\n".join(f"- {i['subject']} from {i['sender']}" for i in items)
                 if items
                 else "No matching mail found."
             )
-        from mail_access import get_mail_summary
-
-        return await asyncio.to_thread(get_mail_summary)
+        return ActionResult(f"Unknown MAIL action: {sub}", status="failed")
 
     if kind == "NOTES":
         sub = parts[1].upper() if len(parts) > 1 else "LIST"
@@ -216,19 +250,24 @@ async def dispatch_action(tag: str) -> str:
             from notes_access import list_note_titles
 
             titles = await asyncio.to_thread(list_note_titles)
-            return ("Your notes: " + ", ".join(titles)) if titles else "No notes found."
+            return ActionResult(
+                ("Your notes: " + ", ".join(titles)) if titles else "No notes found."
+            )
         if sub == "READ" and len(parts) > 2:
             from notes_access import read_note
 
             body = await asyncio.to_thread(read_note, parts[2])
-            return body if body else f"Note '{parts[2]}' not found."
+            if body:
+                return ActionResult(body)
+            return ActionResult(f"Note '{parts[2]}' not found.", status="failed")
         if sub == "CREATE" and len(parts) > 2:
             from notes_access import create_note
 
             title, _, content = parts[2].partition("::")
             ok = await asyncio.to_thread(create_note, title.strip(), content.strip())
-            return (
-                f"Note '{title.strip()}' created." if ok else "Failed to create note."
+            return ActionResult(
+                f"Note '{title.strip()}' created." if ok else "Failed to create note.",
+                status="completed" if ok else "failed",
             )
 
     if kind == "TERMINAL":
@@ -236,27 +275,36 @@ async def dispatch_action(tag: str) -> str:
 
         cmd = parts[1] if len(parts) > 1 else ""
         await asyncio.to_thread(open_terminal, cmd)
-        return f"Terminal opened{': ' + cmd if cmd else ''}."
+        return ActionResult(f"Terminal opened{': ' + cmd if cmd else ''}.")
 
     if kind == "BROWSE":
         from browser import browse_url
 
-        return await browse_url(parts[1] if len(parts) > 1 else "")
+        text = await browse_url(parts[1] if len(parts) > 1 else "")
+        return ActionResult(
+            text,
+            status="failed" if text.startswith("Failed to load ") else "completed",
+        )
 
     if kind == "SEARCH":
-        from browser import search_summary
+        from browser import format_search_results, search_results_failed, search_web
 
-        return await search_summary(":".join(parts[1:]))
+        query = ":".join(parts[1:])
+        results = await search_web(query)
+        return ActionResult(
+            format_search_results(query, results),
+            status="failed" if search_results_failed(results) else "completed",
+        )
 
     if kind == "WORK":
         from work_mode import start_task
 
-        return start_task(":".join(parts[1:]))
+        return ActionResult(start_task(":".join(parts[1:])))
 
     if kind == "PLAN":
         from planner import get_clarifying_questions
 
-        return await get_clarifying_questions(":".join(parts[1:]))
+        return ActionResult(await get_clarifying_questions(":".join(parts[1:])))
 
     if kind == "PLAN_ANSWER":
         from planner import generate_plan
@@ -264,53 +312,61 @@ async def dispatch_action(tag: str) -> str:
         payload = ":".join(parts[1:])
         task, sep, answers = payload.partition("::")
         if not sep or not task.strip() or not answers.strip():
-            return "Plan answer needs both task and answers separated by '::'."
-        return await generate_plan(task.strip(), answers.strip())
+            return ActionResult(
+                "Plan answer needs both task and answers separated by '::'.",
+                status="failed",
+            )
+        return ActionResult(await generate_plan(task.strip(), answers.strip()))
 
     if kind == "REMEMBER":
         fact = ":".join(parts[1:])
         await asyncio.to_thread(_mem.add_fact, fact)
-        return f"Remembered: {fact}"
+        return ActionResult(f"Remembered: {fact}")
 
     if kind == "FORGET":
         try:
             await asyncio.to_thread(_mem.delete_fact, int(parts[1]))
-            return "Fact forgotten."
+            return ActionResult("Fact forgotten.")
         except (ValueError, IndexError):
-            return "Invalid fact ID."
+            return ActionResult("Invalid fact ID.", status="failed")
 
     if kind == "RECALL":
         query = ":".join(parts[1:]).strip()
         if not query:
-            return "Recall query was empty."
+            return ActionResult("Recall query was empty.", status="failed")
         hits = await asyncio.to_thread(_mem.search, query)
         if not hits:
-            return f"No prior conversation matches '{query}'."
+            return ActionResult(f"No prior conversation matches '{query}'.")
         lines = [f"- ({h['role']}) {h['content']}" for h in hits[:5]]
-        return "Recalled exchanges:\n" + "\n".join(lines)
+        return ActionResult("Recalled exchanges:\n" + "\n".join(lines))
 
     if kind == "TASK":
         sub = parts[1].upper() if len(parts) > 1 else "LIST"
         if sub == "LIST":
             tasks = await asyncio.to_thread(_mem.list_tasks, "pending")
             if not tasks:
-                return "No pending tasks, sir."
+                return ActionResult("No pending tasks, sir.")
             lines = [f"- #{t['id']} {t['title']}" for t in tasks[:10]]
-            return "Pending tasks:\n" + "\n".join(lines)
+            return ActionResult("Pending tasks:\n" + "\n".join(lines))
         if sub == "CREATE" and len(parts) > 2:
             title = parts[2].strip()
             if not title:
-                return "Task title was empty."
+                return ActionResult("Task title was empty.", status="failed")
             task_id = await asyncio.to_thread(_mem.add_task, title)
-            return f"Task #{task_id} added: {title}"
+            return ActionResult(f"Task #{task_id} added: {title}")
         if sub == "DONE" and len(parts) > 2:
             try:
                 task_id = int(parts[2])
             except ValueError:
-                return "Invalid task ID."
+                return ActionResult("Invalid task ID.", status="failed")
             ok = await asyncio.to_thread(_mem.update_task_status, task_id, "done")
-            return (
-                f"Task #{task_id} marked done." if ok else f"Task #{task_id} not found."
+            return ActionResult(
+                (
+                    f"Task #{task_id} marked done."
+                    if ok
+                    else f"Task #{task_id} not found."
+                ),
+                status="completed" if ok else "failed",
             )
 
     if kind == "UI":
@@ -319,48 +375,88 @@ async def dispatch_action(tag: str) -> str:
             from gui_actions import focus_app
 
             target = parts[2] if len(parts) > 2 else ""
-            return await asyncio.to_thread(focus_app, target)
+            text = await asyncio.to_thread(focus_app, target)
+            return ActionResult(
+                text,
+                status="completed" if text.startswith("Focused ") else "failed",
+            )
         if sub == "OBSERVE":
             from gui_actions import observe_frontmost
 
-            return await asyncio.to_thread(observe_frontmost)
+            text = await asyncio.to_thread(observe_frontmost)
+            return ActionResult(
+                text,
+                status=(
+                    "failed"
+                    if not text
+                    or text.startswith("Couldn't ")
+                    or text.startswith("No frontmost app")
+                    or " no inspectable UI " in text
+                    else "completed"
+                ),
+            )
         if sub == "CLICK":
             from gui_actions import click_element
 
             payload = parts[2] if len(parts) > 2 else ""
             role, sep, label = payload.partition("::")
             if not sep:
-                return "UI:CLICK needs role::label."
+                return ActionResult("UI:CLICK needs role::label.", status="failed")
             role_clean = role.strip()
             label_clean = label.strip()
             if not role_clean or not label_clean:
                 # An empty label would match every element via substring
                 # search and bypass safety.classify's risky-label guard.
-                return "UI:CLICK needs a non-empty role and label."
-            return await asyncio.to_thread(click_element, role_clean, label_clean)
+                return ActionResult(
+                    "UI:CLICK needs a non-empty role and label.",
+                    status="failed",
+                )
+            text = await asyncio.to_thread(click_element, role_clean, label_clean)
+            return ActionResult(
+                text,
+                status="completed" if text.startswith("Clicked ") else "failed",
+            )
         if sub == "TYPE":
             from gui_actions import type_text
 
             text = parts[2] if len(parts) > 2 else ""
-            return await asyncio.to_thread(type_text, text)
+            result = await asyncio.to_thread(type_text, text)
+            return ActionResult(
+                result,
+                status="completed" if result.startswith("Typed: ") else "failed",
+            )
         if sub == "KEY":
             from gui_actions import send_key
 
             spec = parts[2] if len(parts) > 2 else ""
-            return await asyncio.to_thread(send_key, spec)
+            text = await asyncio.to_thread(send_key, spec)
+            return ActionResult(
+                text,
+                status="completed" if text.startswith("Sent ") else "failed",
+            )
         if sub == "SCROLL":
             from gui_actions import scroll
 
             payload = parts[2] if len(parts) > 2 else ""
             direction, sep, amount_str = payload.partition("::")
             if not sep:
-                return "UI:SCROLL needs direction::amount."
+                return ActionResult(
+                    "UI:SCROLL needs direction::amount.",
+                    status="failed",
+                )
             try:
                 amount = int(amount_str.strip())
             except ValueError:
-                return f"UI:SCROLL amount must be an integer, got '{amount_str}'."
-            return await asyncio.to_thread(scroll, direction.strip(), amount)
-        return f"Unknown UI action: {sub}"
+                return ActionResult(
+                    f"UI:SCROLL amount must be an integer, got '{amount_str}'.",
+                    status="failed",
+                )
+            text = await asyncio.to_thread(scroll, direction.strip(), amount)
+            return ActionResult(
+                text,
+                status="completed" if text.startswith("Scrolled ") else "failed",
+            )
+        return ActionResult(f"Unknown UI action: {sub}", status="failed")
 
     if kind == "COMPUTER":
         from computer_use import run_computer_goal
@@ -370,10 +466,19 @@ async def dispatch_action(tag: str) -> str:
             goal = goal + ":" + parts[2]
         goal = goal.strip()
         if not goal:
-            return "COMPUTER needs a non-empty goal."
-        return await asyncio.to_thread(run_computer_goal, goal)
+            return ActionResult("COMPUTER needs a non-empty goal.", status="failed")
+        text = await asyncio.to_thread(run_computer_goal, goal)
+        return ActionResult(
+            text,
+            status=(
+                "failed"
+                if text.startswith("Missing goal")
+                or text.startswith("Computer Use failed:")
+                else "completed"
+            ),
+        )
 
-    return f"Unknown action: {kind}"
+    return ActionResult(f"Unknown action: {kind}", status="failed")
 
 
 # ---------------------------------------------------------------------------
@@ -424,6 +529,7 @@ async def _run_action_loop(
     system: str,
     task: str,
     max_steps: int,
+    on_step: StepCallback | None = None,
 ) -> tuple[str, list[tuple[str, str]], "PendingAction | None"]:
     """Run a bounded ReAct loop.
 
@@ -458,17 +564,19 @@ async def _run_action_loop(
             )
             return raw, steps, pending
         if decision is safety.Decision.BLOCKED:
-            result = f"blocked: {safety.reason(tag)}"
+            result = ActionResult(f"blocked: {safety.reason(tag)}", status="blocked")
         else:
             try:
-                result = await dispatch_action(tag)
+                result = await _dispatch_action_result(tag)
             except Exception as e:  # noqa: BLE001
                 log.error("Action dispatch error: %s", e)
-                result = f"error: {e}"
-        steps.append((tag, result))
+                result = ActionResult(f"error: {e}", status="failed")
+        steps.append((tag, result.text))
+        if on_step is not None:
+            await on_step(tag, result)
         history = history + [
             {"role": "assistant", "content": raw},
-            {"role": "user", "content": f"[SYSTEM RESULT]\n{result}"},
+            {"role": "user", "content": f"[SYSTEM RESULT]\n{result.text}"},
         ]
     return raw, steps, None
 
@@ -479,6 +587,16 @@ async def handle_message(ws: WebSocket, text: str) -> None:
     import safety  # local import
 
     wsid = _ws_id(ws)
+
+    async def send_step(tag: str, result: ActionResult) -> None:
+        await ws.send_json(
+            {
+                "type": "step",
+                "kind": _step_kind(tag),
+                "summary": _step_summary(tag, result),
+            }
+        )
+
     pending_existing = _pending.pop(wsid, None)
     if pending_existing is not None and not pending_existing.expired():
         # Negative-first: if the reply contains any cancel/stop token, cancel —
@@ -496,14 +614,18 @@ async def handle_message(ws: WebSocket, text: str) -> None:
             return
         if safety.is_affirmative(text):
             try:
-                result = await dispatch_action(pending_existing.action)
+                result = await _dispatch_action_result(pending_existing.action)
             except Exception as e:  # noqa: BLE001
                 log.error("Confirmed action failed: %s", e)
-                result = f"error: {e}"
+                result = ActionResult(f"error: {e}", status="failed")
+            await send_step(pending_existing.action, result)
             follow_msgs = pending_existing.history + [
                 {
                     "role": "user",
-                    "content": f"[SYSTEM RESULT]\n{result}\n\nNarrate in 1-2 sentences.",
+                    "content": (
+                        f"[SYSTEM RESULT]\n{result.text}\n\n"
+                        "Narrate in 1-2 sentences."
+                    ),
                 },
             ]
             try:
@@ -514,7 +636,7 @@ async def handle_message(ws: WebSocket, text: str) -> None:
                     max_tokens=150,
                 )
             except Exception:  # noqa: BLE001
-                spoken = result
+                spoken = result.text
             _mem.add_exchange("user", text)
             _mem.add_exchange("assistant", spoken)
             await ws.send_json({"type": "text", "content": spoken})
@@ -533,6 +655,7 @@ async def handle_message(ws: WebSocket, text: str) -> None:
             system=_build_system_prompt(),
             task=_task_type(text),
             max_steps=MAX_STEPS,
+            on_step=send_step,
         )
     except Exception as e:  # noqa: BLE001
         log.error("LLM router error: %s", e)

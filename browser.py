@@ -57,10 +57,18 @@ async def search_web(query: str, max_results: int = 5) -> list[dict]:
         await page.close()
 
 
-async def search_summary(query: str) -> str:
-    results = await search_web(query)
+def search_results_failed(results: list[dict]) -> bool:
+    return any(r.get("title") == "Error" and not r.get("url") for r in results)
+
+
+def format_search_results(query: str, results: list[dict]) -> str:
     if not results:
         return f"No results found for: {query}"
     return "\n\n".join(
         f"- {r['title']}\n  {r['snippet']}\n  {r['url']}" for r in results
     )
+
+
+async def search_summary(query: str) -> str:
+    results = await search_web(query)
+    return format_search_results(query, results)

@@ -46,9 +46,9 @@ def test_action_loop_runs_one_safe_action(monkeypatch):
 
     async def fake_dispatch(tag):
         assert tag == "CALENDAR"  # nosec B101
-        return "no events today"
+        return server.ActionResult("no events today")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -72,9 +72,9 @@ def test_action_loop_max_steps_one_stops_after_first_action(monkeypatch):
     monkeypatch.setattr(server, "_router", fake)
 
     async def fake_dispatch(tag):
-        return "result"
+        return server.ActionResult("result")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -98,9 +98,9 @@ def test_handle_message_dispatches_safe_action(monkeypatch):
 
     async def fake_dispatch(tag):
         assert tag == "CALENDAR"  # nosec B101
-        return "0 events"
+        return server.ActionResult("0 events")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     async def fake_synth(_):
         return b""
@@ -125,6 +125,119 @@ def test_handle_message_dispatches_safe_action(monkeypatch):
     assert "No events today" in text_msg["content"]  # nosec B101
 
 
+def test_handle_message_emits_step_after_safe_action(monkeypatch):
+    fake_router = FakeRouter(["Checking. [ACTION:CALENDAR]", "OK.", "No events today."])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def fake_dispatch(tag):
+        assert tag == "CALENDAR"  # nosec B101
+        return server.ActionResult("0 events")
+
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    run(server.handle_message(ws, "any meetings?"))
+
+    types = [m["type"] for m in ws.sent]
+    assert types[:2] == ["thinking", "step"]  # nosec B101
+    step_msg = next(m for m in ws.sent if m["type"] == "step")
+    assert step_msg == {  # nosec B101
+        "type": "step",
+        "kind": "CALENDAR",
+        "summary": "CALENDAR completed.",
+    }
+
+
+def test_handle_message_emits_failed_step_for_validation_result(monkeypatch):
+    fake_router = FakeRouter(["Trying. [ACTION:UI:CLICK:onlyrole]", "Understood."])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    run(server.handle_message(ws, "click it"))
+
+    step_msg = next(m for m in ws.sent if m["type"] == "step")
+    assert step_msg == {  # nosec B101
+        "type": "step",
+        "kind": "UI:CLICK",
+        "summary": "UI:CLICK failed.",
+    }
+
+
+def test_handle_message_emits_failed_step_for_empty_recall(monkeypatch):
+    fake_router = FakeRouter(["Trying. [ACTION:RECALL:]", "Understood."])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    run(server.handle_message(ws, "recall nothing"))
+
+    step_msg = next(m for m in ws.sent if m["type"] == "step")
+    assert step_msg == {  # nosec B101
+        "type": "step",
+        "kind": "RECALL",
+        "summary": "RECALL failed.",
+    }
+
+
+def test_action_results_mark_validation_failures():
+    results = [
+        run(server._dispatch_action_result("TASK:CREATE:")),
+        run(server._dispatch_action_result("TASK:DONE:not-number")),
+        run(server._dispatch_action_result("MAIL:SEND:a@b.com::hi")),
+    ]
+
+    assert [r.status for r in results] == ["failed", "failed", "failed"]  # nosec B101
+
+
+def test_action_result_marks_search_provider_error(monkeypatch):
+    import browser
+
+    async def fake_search(_query):
+        return [{"title": "Error", "url": "", "snippet": "timeout"}]
+
+    monkeypatch.setattr(browser, "search_web", fake_search)
+
+    result = run(server._dispatch_action_result("SEARCH:asyncio"))
+
+    assert result.status == "failed"  # nosec B101
+    assert "timeout" in result.text  # nosec B101
+
+
 def test_action_loop_confirm_returns_pending(monkeypatch):
     fake = FakeRouter(["Sending. [ACTION:MAIL:SEND:a@b.com::hi]"])
     monkeypatch.setattr(server, "_router", fake)
@@ -132,7 +245,7 @@ def test_action_loop_confirm_returns_pending(monkeypatch):
     async def must_not_be_called(tag):
         raise AssertionError(f"dispatch should not run for CONFIRM, got {tag}")
 
-    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_be_called)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -159,7 +272,7 @@ def test_action_loop_blocked_records_step_and_continues(monkeypatch):
     async def must_not_be_called(tag):
         raise AssertionError("dispatch should not run for BLOCKED")
 
-    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_be_called)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -182,7 +295,7 @@ def test_handle_message_confirm_emits_pending_and_no_dispatch(monkeypatch):
     async def must_not_be_called(_):
         raise AssertionError("dispatch must not run for CONFIRM")
 
-    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_be_called)
 
     async def fake_synth(_):
         return b""
@@ -216,9 +329,9 @@ def test_handle_message_pending_yes_executes_action(monkeypatch):
 
     async def fake_dispatch(tag):
         called["tag"] = tag
-        return "sent"
+        return server.ActionResult("sent")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     async def fake_synth(_):
         return b""
@@ -243,6 +356,12 @@ def test_handle_message_pending_yes_executes_action(monkeypatch):
     run(server.handle_message(ws, "yes"))
 
     assert called["tag"] == "MAIL:SEND:a@b.com::hi"  # nosec B101
+    step_msg = next(m for m in ws.sent if m["type"] == "step")
+    assert step_msg == {  # nosec B101
+        "type": "step",
+        "kind": "MAIL",
+        "summary": "MAIL completed.",
+    }
     assert server._pending == {}  # nosec B101
 
 
@@ -252,7 +371,7 @@ def test_handle_message_pending_no_cancels(monkeypatch):
     async def must_not_be_called(_):
         raise AssertionError("dispatch must not run on cancellation")
 
-    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_be_called)
 
     async def fake_synth(_):
         return b""
@@ -292,7 +411,7 @@ def test_handle_message_pending_expired_falls_through(monkeypatch):
     async def must_not_be_called(_):
         raise AssertionError("expired pending must not dispatch")
 
-    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_be_called)
 
     async def fake_synth(_):
         return b""
@@ -333,9 +452,9 @@ def test_action_loop_runs_two_safe_steps(monkeypatch):
     monkeypatch.setattr(server, "_router", fake)
 
     async def fake_dispatch(tag):
-        return f"ran {tag}"
+        return server.ActionResult(f"ran {tag}")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -367,9 +486,9 @@ def test_action_loop_breaks_on_repeated_action(monkeypatch):
 
     async def fake_dispatch(tag):
         calls.append(tag)
-        return "0 events"
+        return server.ActionResult("0 events")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -397,9 +516,9 @@ def test_action_loop_stops_at_max_steps(monkeypatch):
     monkeypatch.setattr(server, "_router", fake)
 
     async def fake_dispatch(tag):
-        return f"ran {tag}"
+        return server.ActionResult(f"ran {tag}")
 
-    monkeypatch.setattr(server, "dispatch_action", fake_dispatch)
+    monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
 
     raw, steps, pending = run(
         server._run_action_loop(
@@ -426,7 +545,7 @@ def test_handle_message_pending_conflicting_reply_cancels(monkeypatch):
     async def must_not_be_called(_):
         raise AssertionError("conflicting reply must not dispatch")
 
-    monkeypatch.setattr(server, "dispatch_action", must_not_be_called)
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_be_called)
 
     async def fake_synth(_):
         return b""

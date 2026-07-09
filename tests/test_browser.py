@@ -45,3 +45,12 @@ def test_search_summary_formats_each_hit(monkeypatch):
     assert "https://a.example" in msg  # nosec B101
     assert "first snippet" in msg  # nosec B101
     assert msg.count("- ") == 2  # nosec B101
+
+
+def test_search_results_failed_detects_error_sentinel():
+    assert browser.search_results_failed(  # nosec B101
+        [{"title": "Error", "url": "", "snippet": "timeout"}]
+    )
+    assert not browser.search_results_failed(  # nosec B101
+        [{"title": "Error handling in Python", "url": "https://example.com"}]
+    )
