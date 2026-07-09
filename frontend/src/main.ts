@@ -8,7 +8,11 @@ import {
   stopListening,
 } from "./voice.ts";
 import { parseWakeCommand } from "./wake.ts";
-import { canStartWakeListening, type AppState } from "./session.ts";
+import {
+  canStartWakeListening,
+  stepStatusLabel,
+  type AppState,
+} from "./session.ts";
 import { init as initOrb, setAudioLevel, setState } from "./orb.ts";
 import { initSettings } from "./settings.ts";
 import { DOUBLE_CLAP_EVENT, startClapDetection } from "./clap.ts";
@@ -70,6 +74,9 @@ on("thinking", () => {
   receivedAudio = false;
   transition("thinking");
   stopListening();
+});
+on("step", (m) => {
+  transition("thinking", stepStatusLabel(m));
 });
 on("text", (m) => {
   responseEl.textContent = (m["content"] as string) ?? "";

@@ -1,4 +1,4 @@
-import { canStartWakeListening } from "../src/session.js";
+import { canStartWakeListening, stepStatusLabel } from "../src/session.js";
 
 function assertEqual(actual: unknown, expected: unknown): void {
   if (actual !== expected) {
@@ -12,3 +12,16 @@ assertEqual(canStartWakeListening("thinking", true, false), false);
 assertEqual(canStartWakeListening("thinking", true, true), true);
 assertEqual(canStartWakeListening("speaking", true, false), false);
 assertEqual(canStartWakeListening("speaking", true, true), true);
+assertEqual(
+  stepStatusLabel({
+    type: "step",
+    kind: "CALENDAR",
+    summary: "CALENDAR completed.",
+  }),
+  "CALENDAR completed.",
+);
+assertEqual(
+  stepStatusLabel({ type: "step", kind: "BROWSE" }),
+  "BROWSE completed.",
+);
+assertEqual(stepStatusLabel({ type: "step" }), "Working…");
