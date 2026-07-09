@@ -203,14 +203,15 @@ Inbound (client → server):
 
 Outbound (server → client) per turn, in order:
 
-| Type       | Payload       | Notes                                           |
-| ---------- | ------------- | ----------------------------------------------- |
-| `thinking` | —             | Sent immediately on receipt of a transcript     |
-| `text`     | `{ content }` | Final spoken text (action tags stripped)        |
-| `audio`    | `{ data }`    | Base64 MP3 chunk, 16 KiB; zero or more frames   |
-| `done`     | —             | Turn complete — frontend resumes wake listening |
-| `error`    | `{ message }` | LLM/router failure; no `audio`/`done` follows   |
-| `pong`     | —             | Reply to `ping`                                 |
+| Type       | Payload             | Notes                                           |
+| ---------- | ------------------- | ----------------------------------------------- |
+| `thinking` | —                   | Sent immediately on receipt of a transcript     |
+| `step`     | `{ kind, summary }` | Action-loop progress update before final text   |
+| `text`     | `{ content }`       | Final spoken text (action tags stripped)        |
+| `audio`    | `{ data }`          | Base64 MP3 chunk, 16 KiB; zero or more frames   |
+| `done`     | —                   | Turn complete — frontend resumes wake listening |
+| `error`    | `{ message }`       | LLM/router failure; no `audio`/`done` follows   |
+| `pong`     | —                   | Reply to `ping`                                 |
 
 `audio` may be omitted if ElevenLabs failed and the macOS `say` fallback ran
 server-side. The frontend must therefore treat `done` — not the last `audio`
@@ -314,9 +315,9 @@ Run frontend checks:
 ```bash
 cd frontend
 pnpm build
-pnpm exec tsc --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-wake-tests src/wake.ts test/wake.test.ts
+pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-wake-tests src/wake.ts test/wake.test.ts
 node /tmp/jarvis-wake-tests/test/wake.test.js
-pnpm exec tsc --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-session-tests src/session.ts test/session.test.ts
+pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-session-tests src/session.ts test/session.test.ts
 node /tmp/jarvis-session-tests/test/session.test.js
 ```
 

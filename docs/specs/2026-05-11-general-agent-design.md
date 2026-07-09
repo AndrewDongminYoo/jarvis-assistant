@@ -197,7 +197,7 @@ voice "내 PR 보여줘"
     → router.complete (3) → "오픈 PR 3건이에요: A, B, C." (no action tag)
     → loop exits naturally
     → narrate pass (cheap model) → spoken summary
-  → WebSocket: thinking → text → audio → done
+  → WebSocket: thinking → step → text → audio → done
 ```
 
 A risky single action:
@@ -214,20 +214,21 @@ voice "응"
     → pending found, is_affirmative → execute_confirmed
     → mail send → "sent"
     → narrate → "보냈어요."
+    → WebSocket: thinking → step → text → audio → done
 ```
 
 ### WebSocket Protocol Changes
 
-Existing outbound types (`thinking`, `text`, `audio`, `done`, `error`) are
-unchanged. One optional addition:
+Current outbound types include one optional progress addition between
+`thinking` and final `text`:
 
 ```json
 { "type": "step", "kind": "BROWSE", "summary": "github.com/pulls 열고 있어요" }
 ```
 
-`step` messages are emitted between loop iterations to let the frontend show
-progress. They are not spoken. Frontends that ignore the new type continue to
-work — the protocol stays backward compatible.
+`step` messages are emitted after executed loop steps to let the frontend show
+progress. They are not spoken. Frontends that ignore the type continue to work
+— the protocol stays backward compatible.
 
 ## Error Handling
 
@@ -242,14 +243,14 @@ work — the protocol stays backward compatible.
 
 ## Testing Strategy
 
-| Target                                  | File                         | Approach                                                                                                                                                                                            |
-| --------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `safety.classify`                       | `tests/test_safety.py`       | Table-based parameterized cases (≥30 pairs) covering each row of the rule table                                                                                                                     |
-| `safety.is_affirmative` / `is_negative` | `tests/test_safety.py`       | Korean + English token tables                                                                                                                                                                       |
-| Micro-loop (`handle_message`)           | `tests/test_server_loop.py`  | Fake router injected via existing `LLMRouter(routes=...)` pattern. Scenarios: 0-step, 2-step, CONFIRM, MAX_STEPS, repeat-detected, pending-then-affirmative, pending-then-negative, pending-expired |
-| `gui_actions` AX tree parser            | `tests/test_gui_actions.py`  | Pre-captured AX dump fixtures parsed offline. Live AX calls are split into an integration test that is skipped by default                                                                           |
-| `computer_use` wrapper                  | `tests/test_computer_use.py` | Fake `anthropic` client; dummy 1×1 PIL image for screenshots                                                                                                                                        |
-| Frontend                                | unchanged                    | Existing `wake.ts` / `session.ts` tests still pass — `done` is still the cue to re-arm                                                                                                              |
+| Target                                  | File                                                                               | Approach                                                                                                                                                                                            |
+| --------------------------------------- | ---------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `safety.classify`                       | `tests/test_safety.py`                                                             | Table-based parameterized cases (≥30 pairs) covering each row of the rule table                                                                                                                     |
+| `safety.is_affirmative` / `is_negative` | `tests/test_safety.py`                                                             | Korean + English token tables                                                                                                                                                                       |
+| Micro-loop (`handle_message`)           | `tests/test_server_loop.py`                                                        | Fake router injected via existing `LLMRouter(routes=...)` pattern. Scenarios: 0-step, 2-step, CONFIRM, MAX_STEPS, repeat-detected, pending-then-affirmative, pending-then-negative, pending-expired |
+| `gui_actions` AX tree parser            | `tests/test_gui_actions.py`                                                        | Pre-captured AX dump fixtures parsed offline. Live AX calls are split into an integration test that is skipped by default                                                                           |
+| `computer_use` wrapper                  | `tests/test_computer_use.py`                                                       | Fake `anthropic` client; dummy 1×1 PIL image for screenshots                                                                                                                                        |
+| Frontend                                | `frontend/src/main.ts`, `frontend/src/session.ts`, `frontend/test/session.test.ts` | Status-line progress display for optional `step`; `done` is still the cue to re-arm                                                                                                                 |
 
 Manual verification checklist (not automated):
 
@@ -269,7 +270,7 @@ Manual verification checklist (not automated):
    tree pruning until output fits comfortably in the model context.
 5. Add `UI:CLICK` / `UI:TYPE` / `UI:KEY` / `UI:SCROLL`.
 6. Add `computer_use.py` and the `[ACTION:COMPUTER:goal]` tag.
-7. Add the optional `step` WebSocket message and a small frontend indicator.
+7. Add the optional `step` WebSocket message and a small frontend indicator. Landed in the current implementation.
 
 Each step is a separate PR with green tests before moving on.
 
@@ -279,5 +280,5 @@ Each step is a separate PR with green tests before moving on.
   trip when the model wants to act on what it just saw? (Defer until step 4
   reveals whether it's needed.)
 - What is the right `MAX_STEPS` value? Start at 5; revisit after dogfooding.
-- Should the `step` message also carry latency for observability? (Defer; the
-  existing LLM router logging already captures per-call latency.)
+- Should the `step` message also carry latency for observability? Defer; the
+  existing LLM router logging already captures per-call latency.

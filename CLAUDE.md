@@ -59,9 +59,9 @@ Frontend checks:
 ```bash
 cd frontend
 pnpm build
-pnpm exec tsc --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-wake-tests src/wake.ts test/wake.test.ts
+pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-wake-tests src/wake.ts test/wake.test.ts
 node /tmp/jarvis-wake-tests/test/wake.test.js
-pnpm exec tsc --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-session-tests src/session.ts test/session.test.ts
+pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-session-tests src/session.ts test/session.test.ts
 node /tmp/jarvis-session-tests/test/session.test.js
 ```
 
@@ -79,7 +79,7 @@ Run locally:
 scripts/start.sh
 ```
 
-Then open `http://localhost:5173` in Chrome. The backend listens on `PORT` (default `8340`) and serves the built frontend from `/app` when `frontend/dist/` exists; in dev, Vite serves `5173` and proxies are not used — the frontend connects to the backend WebSocket directly.
+Then open `http://localhost:5173` in Chrome. The backend listens on `PORT` (default `8340`) and serves the built frontend from `/app` when `frontend/dist/` exists. In dev, Vite serves `5173` and proxies `/ws/voice` plus `/api` to the HTTPS backend at `https://localhost:8340`.
 
 ## Cross-File Architecture
 
@@ -103,7 +103,7 @@ When changing system-prompt action tags in `server.py`, the parser, the dispatch
 
 ### WebSocket protocol (`server.py` ↔ `frontend/src/ws.ts`, `voice.ts`)
 
-`/ws/voice` is a JSON-message channel. Inbound types: `transcript` (`{text}`), `ping`. Outbound types in order per turn: `thinking` → `text` → `audio` (base64-chunked, 16 KiB) → `done`, or `error`. Audio chunks may be absent if ElevenLabs failed and macOS `say` was used server-side; the frontend must still treat `done` as the cue to resume wake listening.
+`/ws/voice` is a JSON-message channel. Inbound types: `transcript` (`{text}`), `today-report`, `abort`, `ping`. Outbound types in order per turn: `thinking` → optional `step` progress messages → `text` → `audio` (base64-chunked, 16 KiB) → `done`, or `error`. Audio chunks may be absent if ElevenLabs failed and macOS `say` was used server-side; the frontend must still treat `done` as the cue to resume wake listening.
 
 ### Frontend state machine (`main.ts` → `wake.ts` → `session.ts`)
 

@@ -13,7 +13,7 @@
 **Out of scope:**
 
 - `[ACTION:COMPUTER:goal]` and `computer_use.py` (phase 6 — vision-grounded fallback for apps that don't cleanly expose AX).
-- Optional `step` WebSocket progress message + frontend indicator (phase 7).
+- `step` WebSocket progress message + frontend indicator (landed after this phase).
 - `MAIL:SEND` actual dispatcher implementation.
 - Anything beyond a single AXPress per CLICK (no mouse-click fallback at element coordinates — defer to phase 6).
 
@@ -1193,6 +1193,5 @@ Minimum verification: `uv run pytest -v` (full suite must be green). Manual end-
 ## Follow-ups (separate plans)
 
 1. Phase 6 — `[ACTION:COMPUTER:goal]` + `computer_use.py` (vision-grounded fallback for apps without clean AX).
-2. Phase 7 — Optional `step` WebSocket progress message + frontend indicator.
-3. Mouse-coordinate click fallback for tier-A elements that don't honor `AXPress` (covered by phase 6 in practice).
-4. `MAIL:SEND` real dispatcher implementation (`safety.classify` already gates it).
+2. Mouse-coordinate click fallback for tier-A elements that don't honor `AXPress` (covered by phase 6 in practice).
+3. `MAIL:SEND` real dispatcher implementation (`safety.classify` already gates it).

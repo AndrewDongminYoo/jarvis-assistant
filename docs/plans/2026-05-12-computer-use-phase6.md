@@ -15,7 +15,7 @@
 - Per-tool-action voice re-confirmation inside the loop. `safety.classify("COMPUTER:goal")` already gates the entire session at `CONFIRM`; once the user authorizes the goal the loop runs without further interrupts. Stricter policies are a follow-up plan.
 - Multi-display support. V1 always captures and acts on the **main** display.
 - Native macOS Screen Recording permission UI integration. We surface the same kind of error narrate that phase 4's Accessibility prompt uses; the user grants the permission in System Settings just like the AX one.
-- Optional `step` WebSocket progress message (phase 7).
+- Per-tool Computer Use `step` progress. The generic server action-loop `step` message has landed; surfacing every internal Computer Use tool action remains separate.
 
 ---
 
@@ -1551,7 +1551,7 @@ Minimum verification: `uv run pytest -v` (green). Manual end-to-end smoke (post-
 
 ## Follow-ups (separate plans)
 
-1. Optional `step` WebSocket progress message + frontend indicator (phase 7) — would surface each tool action ("clicked Chrome", "typed asyncio") to the UI so the user can see progress mid-loop.
+1. Per-tool Computer Use `step` progress — surface each internal tool action ("clicked Chrome", "typed asyncio") to the UI so the user can see progress inside the Computer Use loop.
 2. Per-tool-action safety gating inside the loop (e.g. re-confirm when Computer Use is about to click a button whose visible label looks risky). YAGNI until we observe real misuse.
 3. Multi-display support (currently main display only). The screenshot pipeline would need a display-id parameter and the click helpers would need to know which display's coordinate space they're in.
 4. `cursor_position` action — currently returns a placeholder; rarely needed in practice but should be implemented for completeness if a model requests it.
