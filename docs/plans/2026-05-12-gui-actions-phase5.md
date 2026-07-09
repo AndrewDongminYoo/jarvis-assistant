@@ -1,5 +1,8 @@
 # GUI Actions Phase 5 Implementation Plan
 
+**Status:** Implemented.
+Checklist items below have been reconciled with the current code and tests.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land the write actions of the Accessibility fast path — `UI:CLICK`, `UI:TYPE`, `UI:KEY`, `UI:SCROLL` — so JARVIS can drive known macOS apps end-to-end (e.g. "send a Slack DM to Anna").
@@ -28,7 +31,7 @@ The matching function for `UI:CLICK:role::label`. Walks the AX tree depth-first 
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/gui_actions.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -113,7 +116,7 @@ def test_find_element_skips_label_less_elements():
     assert found is not None and found["title"] == "Send"  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -121,7 +124,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... '_find_element'`.
 
-- [ ] **Step 3: Implement `_find_element`**
+- [x] **Step 3: Implement `_find_element`**
 
 Add to `gui_actions.py` immediately above the `_traverse` definition (so phase 5 helpers cluster with phase 4's traversal machinery):
 
@@ -156,7 +159,7 @@ def _find_element(root: Any, role: str, label_substring: str) -> Optional[Any]:
     return None
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -164,7 +167,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all 7 new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -182,7 +185,7 @@ Public click function. Permission check → frontmost lookup → element find �
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/gui_actions.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -251,7 +254,7 @@ def test_click_element_reports_failure_when_press_returns_false(monkeypatch):
     assert "Couldn't click" in result  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -259,7 +262,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... 'click_element'`.
 
-- [ ] **Step 3: Implement `_press_via_ax` and `click_element`**
+- [x] **Step 3: Implement `_press_via_ax` and `click_element`**
 
 Append to `gui_actions.py` (after `observe_frontmost`):
 
@@ -294,7 +297,7 @@ def click_element(role: str, label: str) -> str:
     return f"Couldn't click {role}: {label}."
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -302,7 +305,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: 5 new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -320,7 +323,7 @@ AppleScript `System Events` is the simplest reliable channel for keystroke synth
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/gui_actions.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -371,7 +374,7 @@ def test_type_text_reports_failure_when_run_returns_false(monkeypatch):
     assert "Couldn't" in result  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -379,7 +382,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... 'type_text'`.
 
-- [ ] **Step 3: Implement `_run_system_events` and `type_text`**
+- [x] **Step 3: Implement `_run_system_events` and `type_text`**
 
 Append to `gui_actions.py` (after `click_element`):
 
@@ -427,7 +430,7 @@ def type_text(text: str) -> str:
     return f"Couldn't type '{text}'."
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -435,7 +438,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: 5 new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -453,7 +456,7 @@ Parses strings like `cmd+t`, `shift+cmd+a`, `return`, `esc`. The output drives `
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/gui_actions.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -540,7 +543,7 @@ def test_parse_key_spec_empty_string_returns_none():
     assert char is None and code is None  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -548,7 +551,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... '_parse_key_spec'`.
 
-- [ ] **Step 3: Implement parser and tables**
+- [x] **Step 3: Implement parser and tables**
 
 Append to `gui_actions.py` (after `_escape_applescript_string`):
 
@@ -610,7 +613,7 @@ def _parse_key_spec(
     return None, None, []
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -618,7 +621,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: 10 new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -636,7 +639,7 @@ Builds the System Events action string from `_parse_key_spec` output and dispatc
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/gui_actions.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -701,7 +704,7 @@ def test_send_key_reports_failure_when_run_returns_false(monkeypatch):
     assert "Couldn't" in result  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -709,7 +712,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... 'send_key'`.
 
-- [ ] **Step 3: Implement `send_key`**
+- [x] **Step 3: Implement `send_key`**
 
 Append to `gui_actions.py` (after `_parse_key_spec`):
 
@@ -732,7 +735,7 @@ def send_key(spec: str) -> str:
     return f"Couldn't send {spec}."
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -740,7 +743,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: 6 new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -760,7 +763,7 @@ Quartz `CGEventCreateScrollWheelEvent` is the canonical programmatic scroll on m
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/gui_actions.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -812,7 +815,7 @@ def test_scroll_reports_success_with_direction_and_amount(monkeypatch):
     assert "down" in result and "3" in result  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -820,7 +823,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... 'scroll'`.
 
-- [ ] **Step 3: Implement `_scroll_via_cgevent` and `scroll`**
+- [x] **Step 3: Implement `_scroll_via_cgevent` and `scroll`**
 
 Append to `gui_actions.py` (after `send_key`):
 
@@ -877,7 +880,7 @@ def scroll(direction: str, amount: int) -> str:
     return f"Couldn't scroll {direction_normalized}."
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -885,7 +888,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: 6 new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -903,7 +906,7 @@ The existing `UI:` branch in `dispatch_action` gets four new sub-kinds. The syst
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/server.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_server.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_server.py`:
 
@@ -986,7 +989,7 @@ def test_system_prompt_mentions_all_phase_5_tags():
         assert tag in prompt, tag  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_server.py -v
@@ -994,7 +997,7 @@ uv run pytest tests/test_server.py -v
 
 Expected: every new test FAILs — the UI branch only handles FOCUS and OBSERVE today.
 
-- [ ] **Step 3: Extend the `UI` branch in `dispatch_action`**
+- [x] **Step 3: Extend the `UI` branch in `dispatch_action`**
 
 In `server.py`, locate the existing `if kind == "UI":` block in `dispatch_action`. Replace its body with the extended version below (preserving the surrounding code):
 
@@ -1043,7 +1046,7 @@ In `server.py`, locate the existing `if kind == "UI":` block in `dispatch_action
         return f"Unknown UI action: {sub}"
 ```
 
-- [ ] **Step 4: Update the system prompt**
+- [x] **Step 4: Update the system prompt**
 
 In `server.py`'s `_build_system_prompt`, find the action-tag block. Just AFTER the existing `[ACTION:UI:OBSERVE]` line, insert four new lines:
 
@@ -1056,7 +1059,7 @@ In `server.py`'s `_build_system_prompt`, find the action-tag block. Just AFTER t
 
 Keep the existing "Prefer UI:OBSERVE before acting on UI…" guideline paragraph as-is.
 
-- [ ] **Step 5: Run all tests**
+- [x] **Step 5: Run all tests**
 
 ```bash
 uv run pytest -v
@@ -1064,7 +1067,7 @@ uv run pytest -v
 
 Expected: every test PASSes.
 
-- [ ] **Step 6: Compile-check**
+- [x] **Step 6: Compile-check**
 
 ```bash
 uv run python -m compileall server.py gui_actions.py
@@ -1072,7 +1075,7 @@ uv run python -m compileall server.py gui_actions.py
 
 Expected: no errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server.py tests/test_server.py
@@ -1089,7 +1092,7 @@ Two end-to-end tests that exercise the write surface against TextEdit. Skipped b
 
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/integration/test_gui_actions_live.py`
 
-- [ ] **Step 1: Append live tests**
+- [x] **Step 1: Append live tests**
 
 Append to `tests/integration/test_gui_actions_live.py`:
 
@@ -1143,7 +1146,7 @@ def test_click_finder_menu_via_observe_vocabulary():
     gui_actions.send_key("escape")
 ```
 
-- [ ] **Step 2: Confirm tests are deselected by default**
+- [x] **Step 2: Confirm tests are deselected by default**
 
 ```bash
 uv run pytest -v
@@ -1153,7 +1156,7 @@ Expected: full suite passes; the new live tests are collected as part of the exi
 
 If `PytestUnknownMarkWarning` appears, recheck `pyproject.toml`'s `[tool.pytest.ini_options]` block.
 
-- [ ] **Step 3: Optional — run live tests manually**
+- [x] **Step 3: Optional — run live tests manually**
 
 Reserved for the human user; the implementing agent should NOT run these. Requirements: Accessibility permission granted to the test runner AND Automation permission for "System Events" granted on first prompt:
 
@@ -1161,7 +1164,7 @@ Reserved for the human user; the implementing agent should NOT run these. Requir
 uv run pytest -m macos -v
 ```
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/integration/test_gui_actions_live.py
@@ -1192,6 +1195,11 @@ Minimum verification: `uv run pytest -v` (full suite must be green). Manual end-
 
 ## Follow-ups (separate plans)
 
+Completed since this plan:
+
 1. Phase 6 — `[ACTION:COMPUTER:goal]` + `computer_use.py` (vision-grounded fallback for apps without clean AX).
-2. Mouse-coordinate click fallback for tier-A elements that don't honor `AXPress` (covered by phase 6 in practice).
-3. `MAIL:SEND` real dispatcher implementation (`safety.classify` already gates it).
+2. Mouse-coordinate click fallback for tier-A elements that don't honor `AXPress` — available through the Phase 6 Computer Use fallback.
+
+Still open:
+
+1. `MAIL:SEND` real dispatcher implementation (`safety.classify` already gates it, but `server.py` does not dispatch it yet).

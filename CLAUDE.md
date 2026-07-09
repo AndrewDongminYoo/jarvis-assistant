@@ -11,8 +11,7 @@ JARVIS is a voice-first macOS assistant.
 - Backend: FastAPI in `server.py`
 - LLM routing: `llm_router.py`
 - Memory: SQLite/FTS in `memory.py`
-- macOS integrations: AppleScript helpers in `calendar_access.py`,
-  `mail_access.py`, `notes_access.py`, and `actions.py`
+- macOS integrations: AppleScript helpers in `calendar_access.py`, `mail_access.py`, `notes_access.py`, and `actions.py`; Accessibility helpers in `gui_actions.py`; Anthropic Computer Use fallback in `computer_use.py`
 - Work/planning integrations: `work_mode.py`, `planner.py`
 - Frontend: Vite + TypeScript + Three.js under `frontend/src`
 - Browser speech: Web Speech API in Chrome
@@ -44,7 +43,7 @@ Backend checks:
 
 ```bash
 uv run pytest
-uv run python -m compileall server.py planner.py llm_router.py
+uv run python -m compileall server.py planner.py llm_router.py safety.py gui_actions.py computer_use.py
 ```
 
 Run a single backend test (by node ID or `-k` filter):
@@ -85,13 +84,14 @@ Then open `http://localhost:5173` in Chrome. The backend listens on `PORT` (defa
 
 These flows require reading multiple files at once and are not derivable from any single module:
 
-### Two-pass action dispatch (`server.py` ↔ `llm_router.py`)
+### Bounded action loop (`server.py` ↔ `llm_router.py`)
 
-`handle_message` runs the LLM **twice** for any response that contains an action tag:
+`handle_message` runs the LLM through a bounded action loop for responses that contain action tags:
 
-1. First pass — `_task_type(text)` classifies the user utterance into `voice` / `work` / `plan` by keyword (English + Korean: `build|code|구현` → work, `plan|계획` → plan, otherwise `voice`). The router picks the task-specific model.
-2. The response is scanned by `ACTION_RE` for `[ACTION:KIND:...]`. If found, `dispatch_action` runs the corresponding integration (calendar, mail, notes, terminal, browse, search, work, plan, plan_answer, remember, forget, recall, task) and produces a system result string.
-3. Second pass — when an action produced output, the router is called again with `task="narrate"`, feeding back the original assistant turn + a `[SYSTEM RESULT]` user turn, asking for a 1–2 sentence spoken summary. The `narrate` task uses cheaper/faster models on purpose (`claude-haiku`, `gpt-4o-mini`, `gemini-2.0-flash`).
+1. `_task_type(text)` classifies the user utterance into `voice` / `work` / `plan` by keyword (English + Korean: `build|code|구현` → work, `plan|계획` → plan, otherwise `voice`). The router picks the task-specific model.
+2. `_run_action_loop` calls the router, scans the response with `ACTION_RE`, classifies each `[ACTION:KIND:...]` through `safety.classify`, and dispatches safe or confirmed actions. The loop is capped by `MAX_STEPS = 5` and stops on natural text, repeated actions, pending confirmation, or the cap.
+3. `_dispatch_action_result` routes calendar, mail, notes, terminal, browse, search, work, plan, plan_answer, memory, task, `UI:*`, and `COMPUTER:*` integrations. Each executed step emits an optional WebSocket `step` progress message before final text.
+4. When an action produced output, the router is called again with `task="narrate"`, feeding back the last `[SYSTEM RESULT]` user turn and asking for a 1–2 sentence spoken summary. The `narrate` task uses cheaper/faster models on purpose (`claude-haiku-4-5`, `gpt-4o-mini`, `gemini-2.0-flash`).
 
 When changing system-prompt action tags in `server.py`, the parser, the dispatcher, and the README action list must move together.
 

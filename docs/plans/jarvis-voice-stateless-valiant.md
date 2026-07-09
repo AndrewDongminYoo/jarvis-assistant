@@ -1,5 +1,9 @@
 # JARVIS Voice Assistant — Implementation Plan
 
+**Status:** Legacy bootstrap plan.
+This document is historical and is not the current runtime source of truth; use `README.md` for current behavior, commands, action tags, API routes, and configuration.
+Later plans under `docs/plans/2026-*` track the implemented router, GUI, and Computer Use changes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a complete voice-first AI assistant for macOS — speech-in/speech-out with a British butler personality, Three.js particle orb, and macOS system integrations via AppleScript.

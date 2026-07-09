@@ -1,5 +1,8 @@
 # Computer Use Phase 6 Implementation Plan
 
+**Status:** Implemented.
+This plan's task checklist has been reconciled with the current code: `computer_use.py` exports `run_computer_goal(goal)`, the server routes `[ACTION:COMPUTER:goal]`, the system prompt documents the fallback ordering, and the macOS live test exists behind the default-deselected `macos` marker.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land `[ACTION:COMPUTER:goal]` — the vision-grounded fallback where Anthropic Computer Use drives the screen for apps that don't cleanly expose AX (Figma, Electron canvases, games, web embeds).
@@ -26,7 +29,7 @@
 - Create: `/Users/dongminyu/Development/01_personal/Jarvis/computer_use.py`
 - Create: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_computer_use.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_computer_use.py`:
 
@@ -60,7 +63,7 @@ def test_default_model_honors_env_override(monkeypatch):
     assert computer_use._model() == "claude-opus-4-7-20251015"  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -68,7 +71,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: `ModuleNotFoundError: No module named 'computer_use'`.
 
-- [ ] **Step 3: Create module skeleton**
+- [x] **Step 3: Create module skeleton**
 
 Create `computer_use.py`:
 
@@ -116,7 +119,7 @@ def run_computer_goal(goal: str) -> str:
     raise NotImplementedError
 ```
 
-- [ ] **Step 4: Run tests and confirm pass**
+- [x] **Step 4: Run tests and confirm pass**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -124,7 +127,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: 4 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add computer_use.py tests/test_computer_use.py
@@ -144,7 +147,7 @@ Anthropic's vision tokens scale with image dimensions; we downscale to a max edg
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/computer_use.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_computer_use.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_computer_use.py`:
 
@@ -249,7 +252,7 @@ def test_capture_screenshot_skips_sips_when_image_already_under_cap(monkeypatch,
     assert "sips" not in runs  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -257,7 +260,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: `AttributeError: ... '_capture_screenshot'`.
 
-- [ ] **Step 3: Implement the screenshot pipeline**
+- [x] **Step 3: Implement the screenshot pipeline**
 
 Append to `computer_use.py` (after `_model`):
 
@@ -371,7 +374,7 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
             pass
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -379,7 +382,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: all tests PASS (4 existing + 3 new = 7 total).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add computer_use.py tests/test_computer_use.py
@@ -397,7 +400,7 @@ Computer Use returns coordinates in scaled-screenshot space; we always multiply 
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/computer_use.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_computer_use.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_computer_use.py`:
 
@@ -486,7 +489,7 @@ def test_mouse_drag_posts_down_move_up(monkeypatch):
     assert p_last == (100.0, 50.0)  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -494,7 +497,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: `AttributeError: ... '_mouse_click'`.
 
-- [ ] **Step 3: Implement the mouse helpers**
+- [x] **Step 3: Implement the mouse helpers**
 
 Append to `computer_use.py` (after `_capture_screenshot`):
 
@@ -633,7 +636,7 @@ def _mouse_drag(
         return False
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -641,7 +644,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: 4 new tests PASS (11 total in computer_use tests).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add computer_use.py tests/test_computer_use.py
@@ -661,7 +664,7 @@ Computer Use key action uses xdotool-style strings (`Return`, `cmd+t`, `ctrl+shi
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/computer_use.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_computer_use.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_computer_use.py`:
 
@@ -855,7 +858,7 @@ def test_execute_action_unknown_returns_error_text():
     assert "unsupported" in result["text"].lower() or "unknown" in result["text"].lower()  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -863,7 +866,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: `AttributeError: ... '_execute_action'`.
 
-- [ ] **Step 3: Implement the dispatcher**
+- [x] **Step 3: Implement the dispatcher**
 
 Append to `computer_use.py` (after `_mouse_drag`):
 
@@ -1013,7 +1016,7 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
     return {"type": "text", "text": f"unsupported action: {action}"}
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -1021,7 +1024,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: 11 new tests PASS (22 total).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add computer_use.py tests/test_computer_use.py
@@ -1039,7 +1042,7 @@ Wraps Anthropic's tool-call iteration: build the initial messages with the goal 
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/computer_use.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_computer_use.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_computer_use.py`:
 
@@ -1211,7 +1214,7 @@ def test_run_computer_goal_recovers_on_anthropic_exception(monkeypatch):
     assert "error" in result.lower() or "failed" in result.lower()  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -1219,7 +1222,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: 5 new tests FAIL on `NotImplementedError` from `run_computer_goal`.
 
-- [ ] **Step 3: Implement the loop**
+- [x] **Step 3: Implement the loop**
 
 Replace the `run_computer_goal` stub in `computer_use.py` with the full implementation:
 
@@ -1343,7 +1346,7 @@ def run_computer_goal(goal: str) -> str:
     )
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_computer_use.py -v
@@ -1351,7 +1354,7 @@ uv run pytest tests/test_computer_use.py -v
 
 Expected: all tests PASS (22 + 5 = 27 total).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add computer_use.py tests/test_computer_use.py
@@ -1369,7 +1372,7 @@ git commit -m "feat(computer): add run_computer_goal Anthropic tool-call loop"
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/server.py`
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/test_server.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_server.py`:
 
@@ -1408,7 +1411,7 @@ def test_system_prompt_prefers_ui_observe_over_computer():
     assert "fallback" in prompt.lower() or "when" in prompt.lower()  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_server.py -v
@@ -1416,7 +1419,7 @@ uv run pytest tests/test_server.py -v
 
 Expected: the new tests FAIL — `dispatch_action` returns `"Unknown action: COMPUTER"` and the prompt has no COMPUTER line.
 
-- [ ] **Step 3: Add the `COMPUTER` branch in `dispatch_action`**
+- [x] **Step 3: Add the `COMPUTER` branch in `dispatch_action`**
 
 In `server.py`'s `dispatch_action`, add a new branch alongside the others (before the final `return f"Unknown action: {kind}"`):
 
@@ -1435,7 +1438,7 @@ In `server.py`'s `dispatch_action`, add a new branch alongside the others (befor
 
 Note: `tag.split(":", 2)` produces `parts = ["COMPUTER", "<rest>"]` when there's only one `:` after `COMPUTER`. If the goal itself contains colons, the third `parts[2]` element holds the tail; we reassemble before passing to `run_computer_goal`.
 
-- [ ] **Step 4: Update the system prompt**
+- [x] **Step 4: Update the system prompt**
 
 In `server.py`'s `_build_system_prompt`, find the action-tag block. AFTER the last `[ACTION:UI:SCROLL:...]` line (added in phase 5) and BEFORE the `[ACTION:REMEMBER:fact]` line, insert:
 
@@ -1449,7 +1452,7 @@ Update the existing "Prefer UI:OBSERVE before acting on UI..." paragraph to also
 Prefer UI:OBSERVE before acting on UI. The click target's role/label come from the OBSERVE output's vocabulary. Reach for COMPUTER only when the app doesn't expose AX (Figma canvases, web embeds, games) — it is slower and costlier than UI:* and runs the screen, so reserve it for genuine fallbacks.
 ```
 
-- [ ] **Step 5: Run all tests**
+- [x] **Step 5: Run all tests**
 
 ```bash
 uv run pytest -v
@@ -1457,7 +1460,7 @@ uv run pytest -v
 
 Expected: every test PASSes.
 
-- [ ] **Step 6: Compile-check**
+- [x] **Step 6: Compile-check**
 
 ```bash
 uv run python -m compileall server.py computer_use.py
@@ -1465,7 +1468,7 @@ uv run python -m compileall server.py computer_use.py
 
 Expected: no errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server.py tests/test_server.py
@@ -1482,7 +1485,7 @@ One smoke test that exercises Computer Use end-to-end against a benign, predicta
 
 - Modify: `/Users/dongminyu/Development/01_personal/Jarvis/tests/integration/test_gui_actions_live.py`
 
-- [ ] **Step 1: Append the live test**
+- [x] **Step 1: Append the live test**
 
 Append to `tests/integration/test_gui_actions_live.py`:
 
@@ -1519,7 +1522,7 @@ def test_computer_use_round_trip_finder_new_window():
     assert "exceeded" not in result.lower(), result  # nosec B101
 ```
 
-- [ ] **Step 2: Confirm test is deselected by default**
+- [x] **Step 2: Confirm test is deselected by default**
 
 ```bash
 uv run pytest -v
@@ -1527,11 +1530,11 @@ uv run pytest -v
 
 Expected: the new live test is collected but stays deselected per `addopts = "-m 'not macos'"`. Full unit suite passes.
 
-- [ ] **Step 3: Do NOT run live tests**
+- [x] **Step 3: Do NOT run live tests**
 
 Reserved for the human user. The implementing agent must NOT execute `uv run pytest -m macos`. The default `uv run pytest -v` is sufficient.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/integration/test_gui_actions_live.py
@@ -1542,7 +1545,7 @@ git commit -m "test(computer): add live Computer Use round-trip test"
 
 ## Verification Summary
 
-After this plan lands, the GUI stack supports both the AX fast path (phase 4+5) and the vision-grounded fallback (phase 6):
+The GUI stack now supports both the AX fast path (phase 4+5) and the vision-grounded fallback (phase 6):
 
 - `computer_use.py` exports `run_computer_goal(goal)` plus its internal screenshot, mouse, and tool-dispatch helpers.
 - `server.py:dispatch_action` routes `COMPUTER:<goal>` through `asyncio.to_thread` (the loop is sync because of pyobjc + subprocess).
@@ -1550,7 +1553,7 @@ After this plan lands, the GUI stack supports both the AX fast path (phase 4+5) 
 - `safety.classify` already gates COMPUTER on `CONFIRM` (and BLOCKED on payment keywords) — no safety changes.
 - Phase 5 helpers (`_run_system_events`, `_escape_applescript_string`, `_parse_key_spec`, `_scroll_via_cgevent`) are reused — Computer Use's `type`/`key`/`scroll` actions don't duplicate AppleScript or CGEvent code.
 
-Minimum verification: `uv run pytest -v` (green). Manual end-to-end smoke (post-merge):
+Minimum verification: `uv run pytest -v` (green). Manual end-to-end smoke:
 
 1. "JARVIS, Figma에서 선택된 레이어 색을 빨강으로 바꿔줘" → CONFIRM gate → "응" → run_computer_goal drives the Figma canvas.
 2. Watch `jarvis.computer` logs for tool action sequence (screenshot → click → type → final text).

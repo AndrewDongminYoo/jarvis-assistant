@@ -1,6 +1,6 @@
 # JARVIS General Agent — Design
 
-Status: Draft
+Status: Implemented baseline
 Date: 2026-05-11
 Owner: Dongmin
 
@@ -136,7 +136,7 @@ action detected, (3) `MAX_STEPS` reached, (4) pending confirmation returned.
 | `NOTES:CREATE`, `TASK:CREATE/DONE`, `FORGET`, `UI:TYPE`                                                                        | CONFIRM | —                                                                                                                               |
 | `UI:CLICK:role::label`                                                                                                         | SAFE    | label matches one of `{Send, Delete, Buy, Confirm, Pay, Submit, Remove, Trash, Sign out, Discard}` (case-insensitive) → CONFIRM |
 | `TERMINAL:cmd`                                                                                                                 | CONFIRM | cmd matches one of `sudo`, `rm -rf`, `:(){`, redirect into a system path, `curl ... \| sh` → BLOCKED                            |
-| `MAIL:SEND:*`                                                                                                                  | CONFIRM | —                                                                                                                               |
+| `MAIL:SEND:*` (safety-only; no dispatcher yet)                                                                                 | CONFIRM | —                                                                                                                               |
 | `COMPUTER:goal`                                                                                                                | CONFIRM | goal contains payment, transfer, bank, or password keywords (en+ko) → BLOCKED                                                   |
 | `WORK:task`                                                                                                                    | CONFIRM | —                                                                                                                               |
 
@@ -200,20 +200,20 @@ voice "내 PR 보여줘"
   → WebSocket: thinking → step → text → audio → done
 ```
 
-A risky single action:
+A risky single action with an implemented dispatcher:
 
 ```log
-voice "Anna에게 메일 보내줘, '점심 같이 먹을래?'"
+voice "점심 메모 하나 만들어줘, 내용은 Anna에게 점심 같이 먹을래 물어보기"
   → handle_message
     → _task_type → "voice"
-    → router.complete (1) → "[ACTION:MAIL:SEND:anna@x.com::점심 같이 먹을래?]"
-    → safety: CONFIRM → store pending, narrate "Anna에게 보낼게요, 진행할까요?"
+    → router.complete (1) → "[ACTION:NOTES:CREATE:Lunch::Anna에게 점심 같이 먹을래 물어보기]"
+    → safety: CONFIRM → store pending, narrate "메모를 만들까요?"
     → WebSocket: thinking → text → audio → done
 voice "응"
   → handle_message
     → pending found, is_affirmative → execute_confirmed
-    → mail send → "sent"
-    → narrate → "보냈어요."
+    → notes create → "Note created."
+    → narrate → "메모를 만들었어요."
     → WebSocket: thinking → step → text → audio → done
 ```
 
@@ -260,19 +260,17 @@ Manual verification checklist (not automated):
 - Wake → "내 PR 보여줘" → 2-step loop, single spoken summary
 - AX permission revoked → narrate prompts for permission
 
-## Rollout
+## Rollout Status
 
-1. Land `safety.py` and tests first — pure code, no system side effects.
-2. Refactor `handle_message` into the micro-loop with `MAX_STEPS = 1`. All
-   existing tests must still pass. This is the riskiest single change.
-3. Bump `MAX_STEPS = 5` once the loop is stable.
-4. Add `gui_actions.py` with `UI:OBSERVE` and `UI:FOCUS` only. Iterate on AX
-   tree pruning until output fits comfortably in the model context.
-5. Add `UI:CLICK` / `UI:TYPE` / `UI:KEY` / `UI:SCROLL`.
-6. Add `computer_use.py` and the `[ACTION:COMPUTER:goal]` tag.
-7. Add the optional `step` WebSocket message and a small frontend indicator. Landed in the current implementation.
+Implemented in the current codebase:
 
-Each step is a separate PR with green tests before moving on.
+1. `safety.py` and tests — pure code, no system side effects.
+2. `handle_message` micro-loop, initially covered at `MAX_STEPS = 1` in tests.
+3. `MAX_STEPS = 5` production cap in `server.py`.
+4. `gui_actions.py` with `UI:OBSERVE` and `UI:FOCUS`.
+5. `UI:CLICK` / `UI:TYPE` / `UI:KEY` / `UI:SCROLL`.
+6. `computer_use.py` and the `[ACTION:COMPUTER:goal]` tag.
+7. Optional `step` WebSocket message and frontend progress indicator.
 
 ## Open Questions
 

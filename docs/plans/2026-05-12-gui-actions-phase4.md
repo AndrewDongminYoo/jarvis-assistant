@@ -1,5 +1,8 @@
 # GUI Actions Phase 4 Implementation Plan
 
+**Status:** Implemented.
+Checklist items below have been reconciled with the current code and tests.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land `gui_actions.py` with `UI:FOCUS` and `UI:OBSERVE` action handlers — the read-only Accessibility fast path for the JARVIS general agent.
@@ -10,7 +13,7 @@
 
 **Spec:** `docs/specs/2026-05-12-gui-actions-phase4-design.md`
 
-**Out of scope (phase 5+):** `UI:CLICK`, `UI:TYPE`, `UI:KEY`, `UI:SCROLL`, `[ACTION:COMPUTER:goal]`, optional `step` WebSocket message, frontend changes.
+**Original out of scope (later phases, now implemented except the open items listed at the end):** `UI:CLICK`, `UI:TYPE`, `UI:KEY`, `UI:SCROLL`, `[ACTION:COMPUTER:goal]`, optional `step` WebSocket message, frontend changes.
 
 ---
 
@@ -22,7 +25,7 @@
 - Create: `gui_actions.py`
 - Create: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Add pyobjc dependencies**
+- [x] **Step 1: Add pyobjc dependencies**
 
 Open `pyproject.toml`. The dependency block uses PEP 621 `[project] dependencies = [...]`. Append two entries just before the closing bracket (the existing entries are not alphabetical, so insertion order doesn't matter — match the existing version-pin style):
 
@@ -39,7 +42,7 @@ uv sync
 
 Expected: dependencies install, `uv.lock` updates, no errors.
 
-- [ ] **Step 2: Write failing import test**
+- [x] **Step 2: Write failing import test**
 
 Create `tests/test_gui_actions.py`:
 
@@ -63,7 +66,7 @@ def test_module_constants_match_spec():
     assert gui_actions.MAX_DEPTH == 15  # nosec B101
 ```
 
-- [ ] **Step 3: Run and confirm failure**
+- [x] **Step 3: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -71,7 +74,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `ModuleNotFoundError: No module named 'gui_actions'`.
 
-- [ ] **Step 4: Create module skeleton**
+- [x] **Step 4: Create module skeleton**
 
 Create `gui_actions.py`:
 
@@ -111,7 +114,7 @@ def observe_frontmost() -> str:
     raise NotImplementedError
 ```
 
-- [ ] **Step 5: Run tests and confirm pass**
+- [x] **Step 5: Run tests and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -119,7 +122,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: both tests PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pyproject.toml uv.lock gui_actions.py tests/test_gui_actions.py
@@ -135,7 +138,7 @@ git commit -m "feat(gui): scaffold gui_actions module with pyobjc deps"
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -182,7 +185,7 @@ def test_normalize_role_ignored_returns_none_pair():
         assert gui_actions._normalize_role(role) == (None, None), role  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -190,7 +193,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: module 'gui_actions' has no attribute '_normalize_role'`.
 
-- [ ] **Step 3: Implement `_normalize_role`**
+- [x] **Step 3: Implement `_normalize_role`**
 
 Add to `gui_actions.py` (just above `is_accessibility_permitted`):
 
@@ -231,7 +234,7 @@ def _normalize_role(ax_role: str) -> tuple[Optional[str], Optional[str]]:
     return None, None
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -239,7 +242,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -257,7 +260,7 @@ The four accessors (`_get_role`, `_get_attribute`, `_get_children`, `_is_enabled
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -311,7 +314,7 @@ def test_label_for_returns_none_when_all_empty():
     assert gui_actions._label_for({"title": "", "value": "  "}) is None  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -319,7 +322,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... '_get_role'` (or similar) on every new test.
 
-- [ ] **Step 3: Implement accessors and `_label_for`**
+- [x] **Step 3: Implement accessors and `_label_for`**
 
 Add to `gui_actions.py` (above `_normalize_role`):
 
@@ -374,7 +377,7 @@ def _label_for(element: Any) -> Optional[str]:
     return None
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -382,7 +385,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -398,7 +401,7 @@ git commit -m "feat(gui): add AX accessors and label extraction"
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -438,7 +441,7 @@ def test_format_element_no_label_with_disabled():
     assert line == "  toolbar [disabled]"  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -446,7 +449,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... '_format_element'`.
 
-- [ ] **Step 3: Implement `_format_element`**
+- [x] **Step 3: Implement `_format_element`**
 
 Add to `gui_actions.py` (after `_label_for`):
 
@@ -470,7 +473,7 @@ def _format_element(
     return line
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -478,7 +481,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -496,7 +499,7 @@ This task lands the recursion shape and tier-A behavior. Tier-B (deferred-emit) 
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -562,7 +565,7 @@ def test_traverse_nested_tier_a_indents_one_per_level():
     assert lines == ['row "Anna"', '  text "Lunch tomorrow?"']  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -570,7 +573,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... '_traverse'`.
 
-- [ ] **Step 3: Implement `_traverse` core**
+- [x] **Step 3: Implement `_traverse` core**
 
 Add to `gui_actions.py` (after `_format_element`):
 
@@ -616,7 +619,7 @@ def _walk_children(children: list, depth: int) -> list[str]:
     return out
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -624,7 +627,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -640,7 +643,7 @@ git commit -m "feat(gui): add _traverse core with tier-A and ignored roles"
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -709,7 +712,7 @@ def test_traverse_max_elements_no_marker_when_under_budget():
     assert not any("truncated" in line for line in lines)  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -717,7 +720,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: tier-B tests fail (current code passes them through). MAX_DEPTH and MAX_ELEMENTS tests also fail.
 
-- [ ] **Step 3: Replace `_traverse` and `_walk_children` with the budgeted version**
+- [x] **Step 3: Replace `_traverse` and `_walk_children` with the budgeted version**
 
 Replace the bodies of `_traverse` and `_walk_children` in `gui_actions.py` with:
 
@@ -811,7 +814,7 @@ def _count_inner(element: Any, depth: int) -> int:
     return sum(_count_inner(c, depth) for c in children)
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -819,7 +822,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all tests PASS, including the new tier-B and limit tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -835,7 +838,7 @@ git commit -m "feat(gui): add tier-B deferred emit + MAX_ELEMENTS/MAX_DEPTH limi
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -850,7 +853,7 @@ def test_is_accessibility_permitted_returns_false_when_not_trusted(monkeypatch):
     assert gui_actions.is_accessibility_permitted() is False  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -858,7 +861,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `AttributeError: ... '_ax_is_trusted'` or `NotImplementedError`.
 
-- [ ] **Step 3: Implement permission check**
+- [x] **Step 3: Implement permission check**
 
 In `gui_actions.py`, replace the `is_accessibility_permitted` skeleton with:
 
@@ -876,7 +879,7 @@ def is_accessibility_permitted() -> bool:
     return _ax_is_trusted()
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -884,7 +887,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: both new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -900,7 +903,7 @@ git commit -m "feat(gui): add is_accessibility_permitted with pyobjc check"
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -961,7 +964,7 @@ def test_focus_app_empty_name_returns_error(monkeypatch):
     assert "app name" in result.lower() or "missing" in result.lower()  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -969,7 +972,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `NotImplementedError` from `focus_app`.
 
-- [ ] **Step 3: Implement `focus_app` and helpers**
+- [x] **Step 3: Implement `focus_app` and helpers**
 
 In `gui_actions.py`, replace the `focus_app` skeleton with:
 
@@ -1051,7 +1054,7 @@ def focus_app(name: str) -> str:
     return f"Couldn't find an app matching '{target}'."
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -1059,7 +1062,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -1075,7 +1078,7 @@ git commit -m "feat(gui): add focus_app with NSWorkspace match and AppleScript f
 - Modify: `gui_actions.py`
 - Modify: `tests/test_gui_actions.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_gui_actions.py`:
 
@@ -1125,7 +1128,7 @@ def test_observe_returns_read_error_when_traversal_raises(monkeypatch):
     assert "Couldn't read UI" in out  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -1133,7 +1136,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: `NotImplementedError` from `observe_frontmost`.
 
-- [ ] **Step 3: Implement `observe_frontmost`**
+- [x] **Step 3: Implement `observe_frontmost`**
 
 In `gui_actions.py`, replace the `observe_frontmost` skeleton with:
 
@@ -1179,7 +1182,7 @@ def observe_frontmost() -> str:
     return "\n".join(lines)
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 ```bash
 uv run pytest tests/test_gui_actions.py -v
@@ -1187,7 +1190,7 @@ uv run pytest tests/test_gui_actions.py -v
 
 Expected: all new tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add gui_actions.py tests/test_gui_actions.py
@@ -1203,7 +1206,7 @@ git commit -m "feat(gui): add observe_frontmost public entrypoint"
 - Modify: `server.py`
 - Modify: `tests/test_server.py`
 
-- [ ] **Step 1: Append failing tests**
+- [x] **Step 1: Append failing tests**
 
 Append to `tests/test_server.py`:
 
@@ -1248,7 +1251,7 @@ def test_system_prompt_mentions_ui_focus_and_ui_observe():
 
 If `tests/test_server.py` does not already define `run = asyncio.run`, add this at the top of the file under existing imports (it's already in the file from earlier work — confirm before adding).
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 ```bash
 uv run pytest tests/test_server.py -v
@@ -1256,7 +1259,7 @@ uv run pytest tests/test_server.py -v
 
 Expected: 4 new tests FAIL — `dispatch_action` returns `"Unknown action: UI"` and the system prompt does not mention the new tags.
 
-- [ ] **Step 3: Add `UI` branch in `dispatch_action`**
+- [x] **Step 3: Add `UI` branch in `dispatch_action`**
 
 In `server.py`'s `dispatch_action`, add a new branch alongside the others (anywhere before the final `return f"Unknown action: {kind}"`):
 
@@ -1275,7 +1278,7 @@ In `server.py`'s `dispatch_action`, add a new branch alongside the others (anywh
         return f"Unknown UI action: {sub}"
 ```
 
-- [ ] **Step 4: Update system prompt**
+- [x] **Step 4: Update system prompt**
 
 In `server.py`'s `_build_system_prompt`, the action tag list currently includes lines like `[ACTION:CALENDAR] — upcoming calendar events`. Add two new lines just before `[ACTION:REMEMBER:fact]`:
 
@@ -1290,7 +1293,7 @@ And, just below the action tag block (before the `{facts_block}` placeholder), a
 Prefer UI:OBSERVE before acting on UI. The click target's role/label come from the OBSERVE output's vocabulary.
 ```
 
-- [ ] **Step 5: Run all tests**
+- [x] **Step 5: Run all tests**
 
 ```bash
 uv run pytest -v
@@ -1298,7 +1301,7 @@ uv run pytest -v
 
 Expected: every test PASSes.
 
-- [ ] **Step 6: Compile-check**
+- [x] **Step 6: Compile-check**
 
 ```bash
 uv run python -m compileall server.py gui_actions.py
@@ -1306,7 +1309,7 @@ uv run python -m compileall server.py gui_actions.py
 
 Expected: no errors.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add server.py tests/test_server.py
@@ -1325,7 +1328,7 @@ This task adds a single live test that exercises the AX pipeline end-to-end agai
 - Create: `tests/integration/__init__.py`
 - Create: `tests/integration/test_gui_actions_live.py`
 
-- [ ] **Step 1: Register the `macos` marker**
+- [x] **Step 1: Register the `macos` marker**
 
 In `pyproject.toml`, find the `[tool.pytest.ini_options]` block. If a `markers = [...]` list exists, append:
 
@@ -1344,11 +1347,11 @@ markers = [
 
 Preserve any other existing keys in the block.
 
-- [ ] **Step 2: Create integration test directory marker**
+- [x] **Step 2: Create integration test directory marker**
 
 Create `tests/integration/__init__.py` (empty file).
 
-- [ ] **Step 3: Create the live test**
+- [x] **Step 3: Create the live test**
 
 Create `tests/integration/test_gui_actions_live.py`:
 
@@ -1385,7 +1388,7 @@ def test_focus_finder_then_observe_returns_a_menu_bar():
     assert "menu_bar" in out, out  # nosec B101
 ```
 
-- [ ] **Step 4: Confirm the test is skipped by default**
+- [x] **Step 4: Confirm the test is skipped by default**
 
 ```bash
 uv run pytest -v
@@ -1393,7 +1396,7 @@ uv run pytest -v
 
 Expected: the live test is collected but reported as deselected (no `macos` marker active), all other tests PASS.
 
-- [ ] **Step 5: Optional — run the live test manually**
+- [x] **Step 5: Optional — run the live test manually**
 
 This step is for the human user, not the implementing agent. After ensuring Accessibility permission is granted to whichever process runs pytest:
 
@@ -1405,7 +1408,7 @@ Expected: both live tests PASS, or the permission test fails with the granting i
 
 The implementing agent should NOT attempt to run this — it requires interactive system permission grants.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pyproject.toml tests/integration/__init__.py tests/integration/test_gui_actions_live.py
@@ -1428,7 +1431,12 @@ Minimum verification: `uv run pytest -v` (must be green). Manual: ask JARVIS "Ch
 
 ## Follow-ups (separate plans)
 
-1. Phase 5 — `UI:CLICK`, `UI:TYPE`, `UI:KEY`, `UI:SCROLL` (write actions) — match against the OBSERVE vocabulary.
-2. Phase 6 — `[ACTION:COMPUTER:goal]` with Anthropic Computer Use.
-3. OBSERVE-result caching for one turn (decide based on phase 5 latency data).
-4. 5-second traversal hard timeout (the spec mentions this as defense-in-depth; `MAX_ELEMENTS`/`MAX_DEPTH` make it unnecessary in practice, but a true wall-clock guard would protect against pathological pyobjc latency).
+Completed since this plan:
+
+1. Phase 5 — `UI:CLICK`, `UI:TYPE`, `UI:KEY`, `UI:SCROLL` (write actions) — implemented in `gui_actions.py` and routed through `server.py`.
+2. Phase 6 — `[ACTION:COMPUTER:goal]` with Anthropic Computer Use — implemented in `computer_use.py` and routed through `server.py`.
+
+Still open:
+
+1. OBSERVE-result caching for one turn (decide based on dogfooding latency data).
+2. 5-second traversal hard timeout (the spec mentions this as defense-in-depth; `MAX_ELEMENTS`/`MAX_DEPTH` make it unnecessary in practice, but a true wall-clock guard would protect against pathological pyobjc latency).

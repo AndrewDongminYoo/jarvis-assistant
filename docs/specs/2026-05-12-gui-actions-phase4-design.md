@@ -1,6 +1,6 @@
 # GUI Actions — Phase 4 (Observe + Focus) Design
 
-Status: Draft
+Status: Implemented baseline
 Date: 2026-05-12
 Owner: Dongmin
 Parent spec: `docs/specs/2026-05-11-general-agent-design.md`
@@ -12,10 +12,10 @@ for known macOS apps — with two read-only action tags: `UI:FOCUS` and
 `UI:OBSERVE`. This validates the AX traversal + pruning pipeline before
 phase 5 introduces write actions (CLICK, TYPE, KEY, SCROLL).
 
-## Non-Goals
+## Original Non-Goals
 
-- Any write action (CLICK, TYPE, KEY, SCROLL) — deferred to phase 5.
-- `[ACTION:COMPUTER:goal]` and `computer_use.py` — deferred to phase 6.
+- Any write action (CLICK, TYPE, KEY, SCROLL) — originally deferred to phase 5 and now implemented.
+- `[ACTION:COMPUTER:goal]` and `computer_use.py` — originally deferred to phase 6 and now implemented.
 - Cross-app workflows. Both tags operate on the **frontmost** app only;
   FOCUS may change which app is frontmost, but OBSERVE has no argument.
 - Custom AX inspection UIs or debug tools.

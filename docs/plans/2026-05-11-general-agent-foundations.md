@@ -1,5 +1,8 @@
 # JARVIS General Agent — Foundations Implementation Plan
 
+**Status:** Implemented.
+Checklist items below have been reconciled with the current code and tests.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Land the safety policy module and refactor `server.py:handle_message` into a bounded micro-loop, so subsequent GUI/Computer-Use work has a stable foundation.
@@ -10,7 +13,7 @@
 
 **Spec:** `docs/specs/2026-05-11-general-agent-design.md` (sections "Safety Model", "Micro ReAct Loop", "Data Flow")
 
-**Out of scope (deferred to follow-up plans):** `gui_actions.py`, `computer_use.py`, `[ACTION:UI:*]` and `[ACTION:COMPUTER:*]` tags, optional `step` WebSocket message, frontend changes.
+**Original out of scope (later follow-up plans, now implemented):** `gui_actions.py`, `computer_use.py`, `[ACTION:UI:*]` and `[ACTION:COMPUTER:*]` tags, optional `step` WebSocket message, frontend changes.
 
 ---
 
@@ -23,7 +26,7 @@
 - Create: `safety.py`
 - Create: `tests/test_safety.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_safety.py`:
 
@@ -70,12 +73,12 @@ def test_is_negative_rejects_others():
         assert is_negative(text) is False, text  # nosec B101
 ```
 
-- [ ] **Step 2: Run tests and confirm they fail**
+- [x] **Step 2: Run tests and confirm they fail**
 
 Run: `uv run pytest tests/test_safety.py -v`
 Expected: `ModuleNotFoundError: No module named 'safety'`
 
-- [ ] **Step 3: Create `safety.py` with minimal implementation**
+- [x] **Step 3: Create `safety.py` with minimal implementation**
 
 ```python
 """Action safety policy for JARVIS.
@@ -149,12 +152,12 @@ def is_negative(text: str) -> bool:
     return any(token in norm for token in _NEGATIVE_TOKENS)
 ```
 
-- [ ] **Step 4: Run tests and confirm they pass**
+- [x] **Step 4: Run tests and confirm they pass**
 
 Run: `uv run pytest tests/test_safety.py -v`
 Expected: all 7 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add safety.py tests/test_safety.py
@@ -170,7 +173,7 @@ git commit -m "feat(safety): add Decision enum and affirmative/negative parsers"
 - Modify: `safety.py`
 - Modify: `tests/test_safety.py`
 
-- [ ] **Step 1: Append failing tests for `classify` and `reason`**
+- [x] **Step 1: Append failing tests for `classify` and `reason`**
 
 Append to `tests/test_safety.py`:
 
@@ -273,12 +276,12 @@ def test_reason_mentions_payment_keyword():
     assert "송금" in msg or "payment" in msg.lower(), msg  # nosec B101
 ```
 
-- [ ] **Step 2: Run new tests and confirm they fail**
+- [x] **Step 2: Run new tests and confirm they fail**
 
 Run: `uv run pytest tests/test_safety.py -v`
 Expected: `ImportError: cannot import name 'classify'` (and `reason`).
 
-- [ ] **Step 3: Extend `safety.py` with `classify` and `reason`**
+- [x] **Step 3: Extend `safety.py` with `classify` and `reason`**
 
 Add to `safety.py` (after the existing module body):
 
@@ -400,12 +403,12 @@ def reason(action: str) -> str:
     return f"unrecognized or unsafe action: {action}"
 ```
 
-- [ ] **Step 4: Run all safety tests and confirm they pass**
+- [x] **Step 4: Run all safety tests and confirm they pass**
 
 Run: `uv run pytest tests/test_safety.py -v`
 Expected: all tests PASS (including the 7 from Task 1.1).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add safety.py tests/test_safety.py
@@ -425,7 +428,7 @@ The goal is to refactor `handle_message` into a bounded loop that today runs at 
 - Modify: `server.py` (top-level, near other module state)
 - Create: `tests/test_server_pending.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/test_server_pending.py`:
 
@@ -461,12 +464,12 @@ def test_pending_registry_exists_and_is_empty_by_default():
     assert server._pending == {}  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `uv run pytest tests/test_server_pending.py -v`
 Expected: `ImportError: cannot import name 'PendingAction'`.
 
-- [ ] **Step 3: Add `PendingAction` and `_pending` to `server.py`**
+- [x] **Step 3: Add `PendingAction` and `_pending` to `server.py`**
 
 Near the top of `server.py` (after existing imports, before `ACTION_RE`):
 
@@ -489,12 +492,12 @@ class PendingAction:
 _pending: dict[str, PendingAction] = {}
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 Run: `uv run pytest tests/test_server_pending.py -v`
 Expected: 3 tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server.py tests/test_server_pending.py
@@ -512,7 +515,7 @@ This task is a **pure refactor**: extract the "router call + dispatch + history 
 - Modify: `server.py`
 - Create: `tests/test_server_loop.py`
 
-- [ ] **Step 1: Write failing tests for the helper**
+- [x] **Step 1: Write failing tests for the helper**
 
 Create `tests/test_server_loop.py`:
 
@@ -607,12 +610,12 @@ def test_action_loop_max_steps_one_stops_after_first_action(monkeypatch):
     assert len(fake.responses) == 1  # one unused — confirms loop stopped  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `uv run pytest tests/test_server_loop.py -v`
 Expected: `AttributeError: module 'server' has no attribute '_run_action_loop'`.
 
-- [ ] **Step 3: Add `_run_action_loop` to `server.py`**
+- [x] **Step 3: Add `_run_action_loop` to `server.py`**
 
 Add (above `handle_message`):
 
@@ -658,12 +661,12 @@ async def _run_action_loop(
     return raw, steps, None
 ```
 
-- [ ] **Step 4: Run loop tests and confirm pass**
+- [x] **Step 4: Run loop tests and confirm pass**
 
 Run: `uv run pytest tests/test_server_loop.py -v`
 Expected: 3 tests PASS.
 
-- [ ] **Step 5: Commit (do not yet call the new helper from `handle_message`)**
+- [x] **Step 5: Commit (do not yet call the new helper from `handle_message`)**
 
 ```bash
 git add server.py tests/test_server_loop.py
@@ -678,7 +681,7 @@ git commit -m "refactor(server): extract _run_action_loop helper (unused)"
 
 - Modify: `server.py` (`handle_message` body)
 
-- [ ] **Step 1: Add a test that pins current behavior end-to-end**
+- [x] **Step 1: Add a test that pins current behavior end-to-end**
 
 Append to `tests/test_server_loop.py`:
 
@@ -723,12 +726,12 @@ def test_handle_message_dispatches_safe_action(monkeypatch):
     assert "No events today" in text_msg["content"]  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm it currently passes against the old `handle_message`**
+- [x] **Step 2: Run and confirm it currently passes against the old `handle_message`**
 
 Run: `uv run pytest tests/test_server_loop.py::test_handle_message_dispatches_safe_action -v`
 Expected: PASS (the existing code already handles this path).
 
-- [ ] **Step 3: Replace `handle_message` body to use `_run_action_loop`**
+- [x] **Step 3: Replace `handle_message` body to use `_run_action_loop`**
 
 Replace the body of `handle_message` in `server.py` with:
 
@@ -784,12 +787,12 @@ async def handle_message(ws: WebSocket, text: str) -> None:
     await ws.send_json({"type": "done"})
 ```
 
-- [ ] **Step 4: Run the full test suite**
+- [x] **Step 4: Run the full test suite**
 
 Run: `uv run pytest -v`
 Expected: all tests PASS — `tests/test_server.py` already exercises `handle_message`-shaped behavior; combined with the new loop test, behavior parity is preserved at `max_steps=1`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server.py tests/test_server_loop.py
@@ -804,7 +807,7 @@ git commit -m "refactor(server): route handle_message through _run_action_loop"
 
 - Modify: `server.py` (`_run_action_loop`, `handle_message`)
 
-- [ ] **Step 1: Add failing tests for CONFIRM and BLOCKED paths**
+- [x] **Step 1: Add failing tests for CONFIRM and BLOCKED paths**
 
 Append to `tests/test_server_loop.py`:
 
@@ -890,12 +893,12 @@ def test_handle_message_confirm_emits_pending_and_no_dispatch(monkeypatch):
     assert "?" in text_msg["content"] or "proceed" in text_msg["content"].lower()  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm the new tests fail**
+- [x] **Step 2: Run and confirm the new tests fail**
 
 Run: `uv run pytest tests/test_server_loop.py -v`
 Expected: the three new tests fail (dispatch is still called for CONFIRM).
 
-- [ ] **Step 3: Wire safety into `_run_action_loop`**
+- [x] **Step 3: Wire safety into `_run_action_loop`**
 
 Replace the body of `_run_action_loop` with:
 
@@ -947,7 +950,7 @@ async def _run_action_loop(
     return raw, steps, None
 ```
 
-- [ ] **Step 4: Handle the pending path in `handle_message`**
+- [x] **Step 4: Handle the pending path in `handle_message`**
 
 Add a helper near `handle_message` and update its body:
 
@@ -978,12 +981,12 @@ In `handle_message`, after the `await _run_action_loop(...)` call and before the
         return
 ```
 
-- [ ] **Step 5: Run all tests**
+- [x] **Step 5: Run all tests**
 
 Run: `uv run pytest -v`
 Expected: all tests PASS, including the three new CONFIRM/BLOCKED cases.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server.py tests/test_server_loop.py
@@ -998,7 +1001,7 @@ git commit -m "feat(server): route risky actions through safety with pending con
 
 - Modify: `server.py` (`handle_message`)
 
-- [ ] **Step 1: Add failing tests for affirmative/negative/expired resolution**
+- [x] **Step 1: Add failing tests for affirmative/negative/expired resolution**
 
 Append to `tests/test_server_loop.py`:
 
@@ -1115,12 +1118,12 @@ def test_handle_message_pending_expired_falls_through(monkeypatch):
     assert "Just chatting" in text_msg["content"]  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `uv run pytest tests/test_server_loop.py -v`
 Expected: the three new tests fail (no pending resolution yet).
 
-- [ ] **Step 3: Add pending-resolution prologue to `handle_message`**
+- [x] **Step 3: Add pending-resolution prologue to `handle_message`**
 
 Just inside `handle_message`, before the `_router`/`_run_action_loop` call, insert:
 
@@ -1172,12 +1175,12 @@ Just inside `handle_message`, before the `_router`/`_run_action_loop` call, inse
 
 (The `_pending.pop` already happened above, so on fall-through the pending is gone.)
 
-- [ ] **Step 4: Run all tests**
+- [x] **Step 4: Run all tests**
 
 Run: `uv run pytest -v`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Compile-check and commit**
+- [x] **Step 5: Compile-check and commit**
 
 Run: `uv run python -m compileall server.py safety.py`
 Expected: no errors.
@@ -1199,7 +1202,7 @@ The loop already supports multi-step; we just bump the cap and add safety nets f
 
 - Modify: `tests/test_server_loop.py`
 
-- [ ] **Step 1: Add failing test (still fails because the loop is hardcoded to 1)**
+- [x] **Step 1: Add failing test (still fails because the loop is hardcoded to 1)**
 
 Append to `tests/test_server_loop.py`:
 
@@ -1237,14 +1240,14 @@ def test_action_loop_runs_two_safe_steps(monkeypatch):
 
 Note: `UI:FOCUS` is SAFE per `safety.classify`, even before `gui_actions.py` exists — but the loop will call `dispatch_action`, which currently returns `f"Unknown action: {kind}"` for `UI`. We override `dispatch_action` in the test so the kind doesn't matter.
 
-- [ ] **Step 2: Run and confirm it passes (we already accept `max_steps` arg)**
+- [x] **Step 2: Run and confirm it passes (we already accept `max_steps` arg)**
 
 Run: `uv run pytest tests/test_server_loop.py::test_action_loop_runs_two_safe_steps -v`
 Expected: PASS — the helper already loops over `range(max_steps)`.
 
 (The failing assertion would only appear if step 1 of the FakeRouter response weren't consumed. If this test passes immediately, that's fine — it's a regression guard for Task 3.4.)
 
-- [ ] **Step 3: Commit the guard test**
+- [x] **Step 3: Commit the guard test**
 
 ```bash
 git add tests/test_server_loop.py
@@ -1260,7 +1263,7 @@ git commit -m "test(server): cover two-step action loop"
 - Modify: `server.py` (`_run_action_loop`)
 - Modify: `tests/test_server_loop.py`
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 Append to `tests/test_server_loop.py`:
 
@@ -1297,12 +1300,12 @@ def test_action_loop_breaks_on_repeated_action(monkeypatch):
     assert len(fake.responses) == 1  # third response never consumed  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `uv run pytest tests/test_server_loop.py::test_action_loop_breaks_on_repeated_action -v`
 Expected: FAIL — current code calls dispatch twice.
 
-- [ ] **Step 3: Add repeat detection in `_run_action_loop`**
+- [x] **Step 3: Add repeat detection in `_run_action_loop`**
 
 In `_run_action_loop`, right after extracting `tag = m.group(1)`, add:
 
@@ -1311,12 +1314,12 @@ In `_run_action_loop`, right after extracting `tag = m.group(1)`, add:
             return raw, steps, None
 ```
 
-- [ ] **Step 4: Run and confirm pass**
+- [x] **Step 4: Run and confirm pass**
 
 Run: `uv run pytest tests/test_server_loop.py -v`
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add server.py tests/test_server_loop.py
@@ -1331,7 +1334,7 @@ git commit -m "feat(server): break action loop on immediate repeats"
 
 - Modify: `tests/test_server_loop.py`
 
-- [ ] **Step 1: Add test**
+- [x] **Step 1: Add test**
 
 Append to `tests/test_server_loop.py`:
 
@@ -1365,12 +1368,12 @@ def test_action_loop_stops_at_max_steps(monkeypatch):
     assert len(fake.responses) == 1  # fourth never consumed  # nosec B101
 ```
 
-- [ ] **Step 2: Run and confirm pass**
+- [x] **Step 2: Run and confirm pass**
 
 Run: `uv run pytest tests/test_server_loop.py::test_action_loop_stops_at_max_steps -v`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/test_server_loop.py
@@ -1385,7 +1388,7 @@ git commit -m "test(server): cover max_steps ceiling"
 
 - Modify: `server.py` (`handle_message`)
 
-- [ ] **Step 1: Add `MAX_STEPS` constant near `ACTION_RE`**
+- [x] **Step 1: Add `MAX_STEPS` constant near `ACTION_RE`**
 
 In `server.py`, add:
 
@@ -1393,21 +1396,21 @@ In `server.py`, add:
 MAX_STEPS = 5
 ```
 
-- [ ] **Step 2: Replace the `max_steps=1` argument in `handle_message`**
+- [x] **Step 2: Replace the `max_steps=1` argument in `handle_message`**
 
 In `handle_message`, change `max_steps=1` to `max_steps=MAX_STEPS`.
 
-- [ ] **Step 3: Run the full test suite**
+- [x] **Step 3: Run the full test suite**
 
 Run: `uv run pytest -v`
 Expected: all tests PASS.
 
-- [ ] **Step 4: Smoke-check the import graph**
+- [x] **Step 4: Smoke-check the import graph**
 
 Run: `uv run python -m compileall server.py safety.py llm_router.py planner.py`
 Expected: no errors.
 
-- [ ] **Step 5: Manual sanity (do NOT skip)**
+- [x] **Step 5: Manual sanity (do NOT skip)**
 
 Start the app: `scripts/start.sh`
 
@@ -1420,7 +1423,7 @@ Verify in a browser at `http://localhost:5173`:
 
 If any of these fail, revert the commit and investigate before proceeding.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add server.py
@@ -1442,6 +1445,8 @@ The shippable state after this plan is:
 Minimum verification: `uv run pytest -v` (must be green) + the four manual checks in Task 3.4 Step 5.
 
 ## Follow-ups (separate plans)
+
+Completed since this plan:
 
 1. `gui_actions.py` with `[ACTION:UI:OBSERVE|FOCUS|SCROLL]` (read-only AX), then `CLICK/TYPE/KEY`.
 2. `computer_use.py` with `[ACTION:COMPUTER:goal]`.

@@ -1,5 +1,8 @@
 # JARVIS — Structure Audit & Alignment Fixes
 
+**Status:** Historical audit, resolved.
+The discrepancies listed below have been applied in the current codebase; keep this file as the original audit record, not as an open task list.
+
 **Context:** The initial build (voice assistant, multilingual support, LLM router) is complete. This plan captures discrepancies found during a backend/frontend structure review against `CLAUDE.md` and `README.md`, and lists the minimal fixes needed to make the codebase fully aligned with its own documentation.
 
 ---

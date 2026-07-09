@@ -25,7 +25,7 @@ these implications.
 Microphone -> Web Speech API -> WebSocket -> FastAPI -> LLM Router -> TTS
                                                |
                                                v
-                         AppleScript, browser, planner, and work integrations
+          AppleScript, Accessibility, Computer Use, browser, planner, and work integrations
 ```
 
 | Layer              | Tech                                              |
@@ -36,7 +36,7 @@ Microphone -> Web Speech API -> WebSocket -> FastAPI -> LLM Router -> TTS
 | LLM routing        | Anthropic, OpenAI, Gemini through `llm_router.py` |
 | TTS                | ElevenLabs, with macOS `say` fallback             |
 | Storage            | SQLite with FTS5                                  |
-| macOS integrations | AppleScript helpers                               |
+| macOS integrations | AppleScript, Accessibility, Quartz, Computer Use  |
 
 ## Runtime Contract
 
@@ -338,6 +338,8 @@ calendar_access.py         Apple Calendar access
 mail_access.py             Apple Mail access
 notes_access.py            Apple Notes access
 actions.py                 macOS system actions
+gui_actions.py             Accessibility-based app focus, observe, click, type, key, scroll
+computer_use.py            Anthropic Computer Use screen-driving fallback
 browser.py                 Playwright browsing/search helpers
 work_mode.py               Claude Code work sessions
 frontend/src/main.ts       Frontend state machine
