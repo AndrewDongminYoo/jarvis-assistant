@@ -384,6 +384,32 @@ def test_execute_action_wait_sleeps(monkeypatch):
     assert result["type"] == "text"  # nosec B101
 
 
+def test_cursor_position_reads_quartz_point(monkeypatch):
+    class Point:
+        x = 12.5
+        y = 34.25
+
+    monkeypatch.setattr(computer_use, "_cg_create_event", lambda _source: "event")
+    monkeypatch.setattr(computer_use, "_cg_event_location", lambda _event: Point())
+
+    assert computer_use._cursor_position() == (12.5, 34.25)  # nosec B101
+
+
+def test_execute_action_cursor_position_returns_coordinates(monkeypatch):
+    monkeypatch.setattr(computer_use, "_cursor_position", lambda: (12.5, 34.25))
+
+    result = computer_use._execute_action(
+        action="cursor_position",
+        params={},
+        scale=2.0,
+    )
+
+    assert result == {  # nosec B101
+        "type": "text",
+        "text": "cursor_position at (6.25, 17.125)",
+    }
+
+
 def test_execute_action_unknown_returns_error_text():
     result = computer_use._execute_action(action="moonwalk", params={}, scale=1.0)
     assert result["type"] == "text"  # nosec B101

@@ -313,6 +313,30 @@ def _cg_post_event(tap, event) -> None:
     CGEventPost(tap, event)
 
 
+def _cg_create_event(source):
+    from Quartz import CGEventCreate  # type: ignore
+
+    return CGEventCreate(source)
+
+
+def _cg_event_location(event):
+    from Quartz import CGEventGetLocation  # type: ignore
+
+    return CGEventGetLocation(event)
+
+
+def _cursor_position() -> Optional[tuple[float, float]]:
+    try:
+        event = _cg_create_event(None)
+        if event is None:
+            return None
+        point = _cg_event_location(event)
+        return float(point.x), float(point.y)
+    except Exception as e:  # noqa: BLE001
+        log.warning("cursor_position failed: %s", e)
+        return None
+
+
 def _mouse_move(x: float, y: float, scale: float) -> bool:
     """Post a mouse-move event at scaled coordinate (x, y).
 
@@ -769,6 +793,13 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
         return {"type": "text", "text": f"waited {duration}s"}
 
     if action == "cursor_position":
-        return {"type": "text", "text": "cursor_position not implemented"}
+        position = _cursor_position()
+        if position is None:
+            return {"type": "text", "text": "cursor_position unavailable"}
+        x, y = position
+        return {
+            "type": "text",
+            "text": f"cursor_position at ({x / scale}, {y / scale})",
+        }
 
     return {"type": "text", "text": f"unsupported action: {action}"}

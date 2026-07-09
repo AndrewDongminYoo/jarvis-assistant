@@ -1001,7 +1001,14 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
         return {"type": "text", "text": f"waited {duration}s"}
 
     if action == "cursor_position":
-        return {"type": "text", "text": "cursor_position not implemented"}
+        position = _cursor_position()
+        if position is None:
+            return {"type": "text", "text": "cursor_position unavailable"}
+        x, y = position
+        return {
+            "type": "text",
+            "text": f"cursor_position at ({x / scale}, {y / scale})",
+        }
 
     return {"type": "text", "text": f"unsupported action: {action}"}
 ```
@@ -1554,4 +1561,3 @@ Minimum verification: `uv run pytest -v` (green). Manual end-to-end smoke (post-
 1. Per-tool Computer Use `step` progress — surface each internal tool action ("clicked Chrome", "typed asyncio") to the UI so the user can see progress inside the Computer Use loop.
 2. Per-tool-action safety gating inside the loop (e.g. re-confirm when Computer Use is about to click a button whose visible label looks risky). YAGNI until we observe real misuse.
 3. Multi-display support (currently main display only). The screenshot pipeline would need a display-id parameter and the click helpers would need to know which display's coordinate space they're in.
-4. `cursor_position` action — currently returns a placeholder; rarely needed in practice but should be implemented for completeness if a model requests it.
