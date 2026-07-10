@@ -427,18 +427,20 @@ class LLMRouter:
                 task: list(providers_for_task)
                 for task, providers_for_task in routes.items()
             }
-            return
-
-        providers = providers or {}
-        route_names_by_task = route_names_by_task or DEFAULT_ROUTE_NAMES
-        self.routes = {
-            task: [
-                providers[name]
-                for name in route_names_by_task.get(task, [])
-                if name in providers
-            ]
-            for task in TASKS
-        }
+        else:
+            providers = providers or {}
+            route_names_by_task = route_names_by_task or DEFAULT_ROUTE_NAMES
+            self.routes = {
+                task: [
+                    providers[name]
+                    for name in route_names_by_task.get(task, [])
+                    if name in providers
+                ]
+                for task in TASKS
+            }
+        # The env-built order is the floor; prefer() reorders a copy of it.
+        self._base_routes = {task: list(ps) for task, ps in self.routes.items()}
+        self.preferred: str | None = None
 
     @classmethod
     def from_env(
@@ -495,6 +497,31 @@ class LLMRouter:
         else:
             log.warning("No LLM providers configured")
         return cls(routes=routes)
+
+    def available_providers(self) -> list[str]:
+        """API provider names present in at least one base route, excluding
+        CLI fallbacks, in stable order."""
+        present = {
+            provider.name
+            for providers_for_task in self._base_routes.values()
+            for provider in providers_for_task
+            if not getattr(provider, "is_cli_fallback", False)
+        }
+        return [name for name in ("anthropic", "openai", "gemini") if name in present]
+
+    def prefer(self, name: str | None) -> None:
+        """Move provider `name` to the front of every task route, recomputed
+        from the pristine base order. Unknown or None restores the base order."""
+        valid = bool(name) and any(
+            provider.name == name
+            for providers_for_task in self._base_routes.values()
+            for provider in providers_for_task
+        )
+        self.preferred = name if valid else None
+        self.routes = {
+            task: _move_to_front(list(providers_for_task), self.preferred)
+            for task, providers_for_task in self._base_routes.items()
+        }
 
     async def complete(
         self,
@@ -568,6 +595,16 @@ def _route_names_for_task(env: Mapping[str, str], task: str) -> list[str]:
     configured = env.get(ROUTE_ENV_VARS[task], "")
     raw_names = configured.split(",") if configured else DEFAULT_ROUTE_NAMES[task]
     return [name.strip().lower() for name in raw_names if name.strip()]
+
+
+def _move_to_front(providers: list[LLMProvider], name: str | None) -> list[LLMProvider]:
+    """Return a new list with the provider named `name` first (if present),
+    preserving the relative order of everything else."""
+    if not name:
+        return providers
+    front = [p for p in providers if p.name == name]
+    rest = [p for p in providers if p.name != name]
+    return front + rest
 
 
 def _build_provider(factory: ProviderFactory, api_key: str, task: str) -> LLMProvider:

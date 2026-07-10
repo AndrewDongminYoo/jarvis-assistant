@@ -347,3 +347,97 @@ def test_from_env_appends_cli_tier_when_binary_present(monkeypatch):
     # API tier (anthropic only — others lack keys) then the claude CLI fallback.
     assert names == ["anthropic", "claude-cli"]  # nosec B101
     assert router.routes["voice"][-1].is_cli_fallback is True  # nosec B101
+
+
+# --- Provider preference reordering -----------------------------------------
+
+
+def _four_task_router(order):
+    from llm_router import LLMRouter
+
+    # order: list of FakeProvider; same instances across all four tasks
+    return LLMRouter(
+        routes={t: list(order) for t in ("voice", "work", "plan", "narrate")}
+    )
+
+
+def test_prefer_moves_provider_to_front_of_every_task():
+    from llm_router import LLMRouter
+
+    a, o, g = FakeProvider("anthropic"), FakeProvider("openai"), FakeProvider("gemini")
+    router = LLMRouter(
+        routes={
+            "voice": [a, o, g],
+            "work": [o, a, g],
+            "plan": [a, o, g],
+            "narrate": [a, o, g],
+        }
+    )
+    router.prefer("openai")
+    for task in ("voice", "work", "plan", "narrate"):
+        assert router.routes[task][0].name == "openai"  # nosec B101
+    # relative order of the rest is preserved
+    assert [p.name for p in router.routes["voice"]] == [
+        "openai",
+        "anthropic",
+        "gemini",
+    ]  # nosec B101
+    assert router.preferred == "openai"  # nosec B101
+
+
+def test_prefer_none_restores_base_order():
+    from llm_router import LLMRouter
+
+    a, o = FakeProvider("anthropic"), FakeProvider("openai")
+    router = _four_task_router([a, o])
+    router.prefer("openai")
+    router.prefer(None)
+    assert [p.name for p in router.routes["voice"]] == [
+        "anthropic",
+        "openai",
+    ]  # nosec B101
+    assert router.preferred is None  # nosec B101
+
+
+def test_prefer_absent_name_keeps_base_order_and_clears_preferred():
+    from llm_router import LLMRouter
+
+    a, o = FakeProvider("anthropic"), FakeProvider("openai")
+    router = _four_task_router([a, o])
+    router.prefer("gemini")  # not present in any route
+    assert [p.name for p in router.routes["voice"]] == [
+        "anthropic",
+        "openai",
+    ]  # nosec B101
+    assert router.preferred is None  # nosec B101
+
+
+def test_prefer_does_not_mutate_base_routes():
+    from llm_router import LLMRouter
+
+    a, o = FakeProvider("anthropic"), FakeProvider("openai")
+    router = _four_task_router([a, o])
+    router.prefer("openai")
+    # a second prefer starts from the pristine base, not the reordered routes
+    router.prefer("anthropic")
+    assert [p.name for p in router.routes["voice"]] == [
+        "anthropic",
+        "openai",
+    ]  # nosec B101
+
+
+def test_available_providers_unions_tasks_excludes_cli_stable_order():
+    from llm_router import LLMRouter
+
+    a, o = FakeProvider("anthropic"), FakeProvider("openai")
+    cli = FakeProvider("codex-cli")
+    cli.is_cli_fallback = True
+    router = LLMRouter(
+        routes={
+            "voice": [o, a, cli],
+            "work": [o, a, cli],
+            "plan": [a],  # anthropic only here
+            "narrate": [o],  # openai only here
+        }
+    )
+    assert router.available_providers() == ["anthropic", "openai"]  # nosec B101
