@@ -222,7 +222,7 @@ def test_handle_message_confirmed_computer_emits_internal_tool_step(monkeypatch)
     fake_router = FakeRouter(["Computer work finished."])
     monkeypatch.setattr(server, "_router", fake_router)
 
-    def fake_run(goal, progress_callback=None):
+    def fake_run(goal, progress_callback=None, display_id=None):
         assert goal == "click the visible button"  # nosec B101
         assert progress_callback is not None  # nosec B101
         progress_callback(

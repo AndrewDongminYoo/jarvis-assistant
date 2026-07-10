@@ -355,19 +355,69 @@ def test_dispatch_action_routes_computer(monkeypatch):
 
     called = {}
 
-    def fake_run(goal):
+    def fake_run(goal, progress_callback=None, display_id=None):
         called["goal"] = goal
+        called["display_id"] = display_id
         return "Done. Window is open."
 
     monkeypatch.setattr(computer_use, "run_computer_goal", fake_run)
     result = run(server.dispatch_action("COMPUTER:open Chrome and search asyncio"))
     assert called["goal"] == "open Chrome and search asyncio"  # nosec B101
+    assert called["display_id"] is None  # nosec B101
     assert "Done" in result  # nosec B101
 
 
 def test_dispatch_action_computer_empty_goal_rejected():
     result = run(server.dispatch_action("COMPUTER:"))
     assert "goal" in result.lower() or "empty" in result.lower()  # nosec B101
+
+
+def test_dispatch_action_computer_parses_display_prefix(monkeypatch):
+    import computer_use
+
+    called = {}
+
+    def fake_run(goal, progress_callback=None, display_id=None):
+        called["goal"] = goal
+        called["display_id"] = display_id
+        return "Done."
+
+    monkeypatch.setattr(computer_use, "run_computer_goal", fake_run)
+    run(server.dispatch_action("COMPUTER:@2 click the Export button"))
+    assert called["goal"] == "click the Export button"  # nosec B101
+    assert called["display_id"] == 2  # nosec B101
+
+
+def test_dispatch_action_computer_literal_at_goal_keeps_main_display(monkeypatch):
+    import computer_use
+
+    called = {}
+
+    def fake_run(goal, progress_callback=None, display_id=None):
+        called["goal"] = goal
+        called["display_id"] = display_id
+        return "Done."
+
+    monkeypatch.setattr(computer_use, "run_computer_goal", fake_run)
+    # No digit after '@' → not a display selector; goal is left intact.
+    run(server.dispatch_action("COMPUTER:@handle send a reply"))
+    assert called["goal"] == "@handle send a reply"  # nosec B101
+    assert called["display_id"] is None  # nosec B101
+
+
+def test_parse_computer_goal_display_selector():
+    assert server._parse_computer_goal("@2 click Export") == (
+        "click Export",
+        2,
+    )  # nosec B101
+    assert server._parse_computer_goal("open Chrome") == (
+        "open Chrome",
+        None,
+    )  # nosec B101
+    # Guardrails: zero/leading-zero/no-space are not display selectors.
+    assert server._parse_computer_goal("@0 do it") == ("@0 do it", None)  # nosec B101
+    assert server._parse_computer_goal("@02 do it") == ("@02 do it", None)  # nosec B101
+    assert server._parse_computer_goal("@2do it") == ("@2do it", None)  # nosec B101
 
 
 def test_dispatch_action_routes_mail_send(monkeypatch):

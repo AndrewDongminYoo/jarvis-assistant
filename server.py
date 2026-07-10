@@ -111,7 +111,7 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:UI:TYPE:text]                  — type the given text into the focused field
   [ACTION:UI:KEY:cmd+t]                  — send a keystroke (cmd/shift/alt/ctrl + char or named key)
   [ACTION:UI:SCROLL:direction::amount]   — scroll the frontmost window (direction: up|down|left|right, amount: lines)
-  [ACTION:COMPUTER:goal]                 — vision-grounded fallback (Anthropic Computer Use); use only when UI:* can't reach the target
+  [ACTION:COMPUTER:goal]                 — vision-grounded fallback (Anthropic Computer Use); use only when UI:* can't reach the target. Prefix goal with @N to target display N (1 = main), e.g. [ACTION:COMPUTER:@2 click Export]
   [ACTION:REMEMBER:fact]                 — remember a user fact
   [ACTION:FORGET:fact_id]               — forget a stored fact
   [ACTION:RECALL:query]                  — search prior conversation
@@ -250,6 +250,24 @@ def _computer_progress_callback(
             log.warning("Computer Use step emission failed: %s", e)
 
     return emit
+
+
+_COMPUTER_DISPLAY_RE = re.compile(r"^@([1-9]\d*)\s+(.+)$", re.DOTALL)
+
+
+def _parse_computer_goal(goal: str) -> tuple[str, int | None]:
+    """Split an optional leading ``@<n>`` display selector off a COMPUTER goal.
+
+    ``@2 click Export`` → ``("click Export", 2)``, where ``n`` is a 1-based
+    display index (1 = main display). A missing or malformed prefix (no digits,
+    a leading zero, or a goal that legitimately starts with ``@name``) returns
+    ``(goal, None)`` so the action defaults to the main display and ordinary
+    goals are left intact.
+    """
+    m = _COMPUTER_DISPLAY_RE.match(goal.strip())
+    if not m:
+        return goal.strip(), None
+    return m.group(2).strip(), int(m.group(1))
 
 
 async def dispatch_action(tag: str) -> str:
@@ -531,17 +549,15 @@ async def _dispatch_action_result(
         goal = parts[1] if len(parts) > 1 else ""
         if len(parts) > 2:
             goal = goal + ":" + parts[2]
-        goal = goal.strip()
+        goal, display_id = _parse_computer_goal(goal)
         if not goal:
             return ActionResult("COMPUTER needs a non-empty goal.", status="failed")
-        if computer_progress_callback is None:
-            text = await asyncio.to_thread(run_computer_goal, goal)
-        else:
-            text = await asyncio.to_thread(
-                run_computer_goal,
-                goal,
-                computer_progress_callback,
-            )
+        text = await asyncio.to_thread(
+            run_computer_goal,
+            goal,
+            computer_progress_callback,
+            display_id,
+        )
         return ActionResult(
             text,
             status=(
