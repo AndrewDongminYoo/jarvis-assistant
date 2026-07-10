@@ -105,6 +105,28 @@ output later.
 - "Run `git status` in Terminal"
 - (System-level browser actions live under "Browse & search" above.)
 
+### On-screen control
+
+JARVIS reads and drives the app in front of you through the macOS
+Accessibility API, and falls back to Anthropic Computer Use (screen vision)
+for apps that don't expose an accessible UI.
+
+- "What's on screen?" / "지금 화면에 뭐 있어?" — read the frontmost app's UI
+- "Click the Send button" / "Reply 링크 눌러줘"
+- "Type my email address" / "Scroll down" / "Press Command T"
+- "Switch to Finder" / "Slack으로 이동해줘"
+- "In Figma, make the selected layer red" — a canvas with no accessible UI,
+  so JARVIS uses Computer Use
+
+Clicking a risky-looking control (Send, Delete, Pay, …) or typing asks for
+confirmation first, and Computer Use blocks credential or payment text
+before it is entered.
+
+To act on a monitor other than your main one, name it — JARVIS targets that
+display (1 = main):
+
+- "On my second display, click Export" → `[ACTION:COMPUTER:@2 click Export]`
+
 ---
 
 ## Cancelling and steering
