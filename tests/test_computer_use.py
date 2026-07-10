@@ -245,6 +245,49 @@ def test_execute_action_left_click_uses_scale_factor(monkeypatch):
     assert "click" in result["text"].lower()  # nosec B101
 
 
+def test_execute_action_left_click_reports_failure_when_primitive_fails(monkeypatch):
+    monkeypatch.setattr(
+        computer_use,
+        "_mouse_click",
+        lambda x, y, scale, button="left", count=1: False,
+    )
+    result = computer_use._execute_action(
+        action="left_click",
+        params={"coordinate": [10, 20]},
+        scale=1.0,
+    )
+    assert result["type"] == "text"  # nosec B101
+    assert result["text"].lower().startswith("failed")  # nosec B101
+
+
+def test_execute_action_scroll_reports_failure_when_primitive_fails(monkeypatch):
+    import gui_actions
+
+    monkeypatch.setattr(
+        gui_actions, "_scroll_via_cgevent", lambda direction, amount: False
+    )
+    result = computer_use._execute_action(
+        action="scroll",
+        params={"scroll_direction": "down", "scroll_amount": 3},
+        scale=1.0,
+    )
+    assert result["type"] == "text"  # nosec B101
+    assert result["text"].lower().startswith("failed")  # nosec B101
+
+
+def test_execute_action_type_reports_failure_when_system_events_fail(monkeypatch):
+    import gui_actions
+
+    monkeypatch.setattr(gui_actions, "_run_system_events", lambda action: False)
+    result = computer_use._execute_action(
+        action="type",
+        params={"text": "hello"},
+        scale=1.0,
+    )
+    assert result["type"] == "text"  # nosec B101
+    assert result["text"].lower().startswith("failed")  # nosec B101
+
+
 def test_execute_action_double_click(monkeypatch):
     calls = {}
     monkeypatch.setattr(
@@ -534,6 +577,238 @@ def test_run_computer_goal_loops_through_tool_use(monkeypatch):
     assert "Clicked it" in result  # nosec B101
 
 
+def test_run_computer_goal_reports_internal_tool_progress(monkeypatch):
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+
+    def fake_execute(action, params, scale):
+        assert action == "left_click"  # nosec B101
+        assert scale == 2.0  # nosec B101
+        return {"type": "text", "text": "ok"}
+
+    monkeypatch.setattr(computer_use, "_execute_action", fake_execute)
+
+    class FakeBlock:
+        def __init__(self, type_, **kwargs):
+            self.type = type_
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    responses = [
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "tool_use",
+                "content": [
+                    FakeBlock(
+                        "tool_use",
+                        id="t1",
+                        name="computer",
+                        input={"action": "left_click", "coordinate": [100, 100]},
+                    ),
+                ],
+            },
+        )(),
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "end_turn",
+                "content": [FakeBlock("text", text="Clicked it.")],
+            },
+        )(),
+    ]
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+            self.call_count = 0
+
+        def create(self, **_kwargs):
+            r = responses[self.call_count]
+            self.call_count += 1
+            return r
+
+    progress = []
+
+    def on_progress(action, result):
+        progress.append((action, result))
+
+    monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
+
+    result = computer_use.run_computer_goal(
+        "click somewhere",
+        progress_callback=on_progress,
+    )
+
+    assert "Clicked it" in result  # nosec B101
+    assert progress == [  # nosec B101
+        (
+            {"action": "left_click", "coordinate": [100, 100]},
+            {"type": "text", "text": "ok"},
+        )
+    ]
+
+
+def test_run_computer_goal_progress_callback_failure_does_not_abort_goal(monkeypatch):
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+    monkeypatch.setattr(
+        computer_use,
+        "_execute_action",
+        lambda *_args, **_kwargs: {"type": "text", "text": "ok"},
+    )
+
+    class FakeBlock:
+        def __init__(self, type_, **kwargs):
+            self.type = type_
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    responses = [
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "tool_use",
+                "content": [
+                    FakeBlock(
+                        "tool_use",
+                        id="t1",
+                        name="computer",
+                        input={"action": "left_click", "coordinate": [100, 100]},
+                    ),
+                ],
+            },
+        )(),
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "end_turn",
+                "content": [FakeBlock("text", text="Still done.")],
+            },
+        )(),
+    ]
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+            self.call_count = 0
+
+        def create(self, **_kwargs):
+            r = responses[self.call_count]
+            self.call_count += 1
+            return r
+
+    def failing_progress(_params, _outcome):
+        raise RuntimeError("observer failed")
+
+    monkeypatch.setattr(computer_use, "_client", lambda: FakeClient())
+
+    result = computer_use.run_computer_goal(
+        "click somewhere",
+        progress_callback=failing_progress,
+    )
+
+    assert "Still done" in result  # nosec B101
+
+
+def test_run_computer_goal_blocks_risky_internal_action(monkeypatch):
+    monkeypatch.setattr(
+        computer_use,
+        "_capture_screenshot",
+        lambda: ("B64", 1280, 800, 2.0),
+    )
+
+    def fail_execute(*_args, **_kwargs):
+        raise AssertionError("risky action should be blocked before execution")
+
+    monkeypatch.setattr(computer_use, "_execute_action", fail_execute)
+
+    class FakeBlock:
+        def __init__(self, type_, **kwargs):
+            self.type = type_
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    responses = [
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "tool_use",
+                "content": [
+                    FakeBlock(
+                        "tool_use",
+                        id="t1",
+                        name="computer",
+                        input={"action": "type", "text": "rm -rf ~/Documents"},
+                    ),
+                ],
+            },
+        )(),
+        type(
+            "R",
+            (),
+            {
+                "stop_reason": "end_turn",
+                "content": [FakeBlock("text", text="Blocked and stopped.")],
+            },
+        )(),
+    ]
+
+    class FakeClient:
+        def __init__(self):
+            self.beta = self
+            self.messages = self
+            self.call_count = 0
+            self.calls = []
+
+        def create(self, **kwargs):
+            self.calls.append(kwargs)
+            r = responses[self.call_count]
+            self.call_count += 1
+            return r
+
+    fake_client = FakeClient()
+    progress = []
+    monkeypatch.setattr(computer_use, "_client", lambda: fake_client)
+
+    result = computer_use.run_computer_goal(
+        "do a dangerous thing",
+        progress_callback=lambda action, outcome: progress.append((action, outcome)),
+    )
+
+    tool_result = fake_client.calls[1]["messages"][-1]["content"][0]
+    assert "Blocked" in tool_result["content"]  # nosec B101
+    assert "rm -rf" in tool_result["content"]  # nosec B101
+    assert progress[0][1] == {  # nosec B101
+        "type": "text",
+        "text": tool_result["content"],
+    }
+    assert "Blocked and stopped." in result  # nosec B101
+
+
+def test_safety_block_reason_blocks_password_text():
+    reason = computer_use._safety_block_reason(
+        "type",
+        {"text": "enter my password hunter2"},
+    )
+
+    assert reason is not None  # nosec B101
+    assert "password" in reason.lower()  # nosec B101
+
+
 def test_run_computer_goal_hits_max_turns(monkeypatch):
     """If the model keeps emitting tool_use beyond MAX_TURNS, the loop
     bails out with a timeout message."""
@@ -705,3 +980,64 @@ def test_execute_action_hold_key_unresolvable_returns_text(monkeypatch):
     )
     assert result["type"] == "text"  # nosec B101
     assert "unsupported" in result["text"].lower()  # nosec B101
+
+
+def test_capture_screenshot_can_target_selected_display(monkeypatch, tmp_path):
+    fake_png = tmp_path / "fake.png"
+    fake_png.write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    monkeypatch.setattr(computer_use, "_screenshot_path", lambda: str(fake_png))
+
+    runs = []
+
+    def fake_run(args, **_kwargs):
+        runs.append(args)
+        result = MagicMock()
+        result.returncode = 0
+        result.stdout = ""
+        result.stderr = ""
+        return result
+
+    import subprocess
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(computer_use, "_image_dims", lambda _path: (1920, 1080))
+    monkeypatch.setattr(
+        computer_use,
+        "_logical_display_bounds",
+        lambda display_id: (1440, 100, 960, 540) if display_id == 2 else None,
+    )
+
+    out = computer_use._capture_screenshot(display_id=2)
+
+    assert out is not None  # nosec B101
+    _b64, sw, sh, scale = out
+    assert runs[0] == ["screencapture", "-x", "-D", "2", str(fake_png)]  # nosec B101
+    assert sw == 1280  # nosec B101
+    assert sh == 720  # nosec B101
+    assert abs(scale - 0.75) < 1e-6  # nosec B101
+    assert scale.origin_x == 1440.0  # nosec B101
+    assert scale.origin_y == 100.0  # nosec B101
+
+
+def test_mouse_click_adds_selected_display_origin(monkeypatch):
+    class Scale(float):
+        def __new__(cls):
+            value = float.__new__(cls, 2.0)
+            value.origin_x = 1440.0
+            value.origin_y = 100.0
+            return value
+
+    posted = []
+    monkeypatch.setattr(
+        computer_use,
+        "_cg_create_mouse_event",
+        lambda _s, t, p, _b: ("event", t, p),
+    )
+    monkeypatch.setattr(
+        computer_use, "_cg_post_event", lambda _tap, event: posted.append(event)
+    )
+
+    ok = computer_use._mouse_click(10, 20, scale=Scale(), button="left")
+
+    assert ok is True  # nosec B101
+    assert posted[0][2] == (1460.0, 140.0)  # nosec B101

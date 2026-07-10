@@ -16,7 +16,9 @@ from __future__ import annotations
 import base64
 import logging
 import os
+import re
 import tempfile
+from collections.abc import Callable
 from typing import Optional
 
 log = logging.getLogger("jarvis.computer")
@@ -32,6 +34,119 @@ MAX_SCALED_DIM = 1280  # cap longest edge; preserves aspect ratio
 MAX_OUTPUT_TOKENS = 4096
 
 
+class DisplayScale(float):
+    origin_x: float
+    origin_y: float
+    display_id: int | None
+
+    def __new__(
+        cls,
+        scale: float,
+        origin: tuple[float, float] = (0.0, 0.0),
+        display_id: int | None = None,
+    ):
+        value = float.__new__(cls, scale)
+        value.origin_x = origin[0]
+        value.origin_y = origin[1]
+        value.display_id = display_id
+        return value
+
+
+ToolProgressCallback = Callable[[dict, dict], None]
+
+_RISKY_TYPE_FRAGMENTS = (
+    "rm -rf",
+    "sudo rm",
+    "diskutil erase",
+    "mkfs",
+    "dd if=",
+    "shutdown -h",
+    "reboot",
+)
+_RISKY_TEXT_KEYWORDS = (
+    "pay",
+    "payment",
+    "transfer",
+    "bank",
+    "password",
+    "송금",
+    "결제",
+    "이체",
+    "비밀번호",
+)
+_BLOCKED_KEY_SPECS = frozenset(
+    {
+        "cmd+q",
+        "command+q",
+        "cmd+w",
+        "command+w",
+        "cmd+shift+q",
+        "command+shift+q",
+    }
+)
+
+
+def _matching_risky_text_fragment(text: str) -> str | None:
+    normalized = " ".join(text.casefold().split())
+    for fragment in _RISKY_TYPE_FRAGMENTS:
+        if fragment in normalized:
+            return fragment
+    for keyword in _RISKY_TEXT_KEYWORDS:
+        if keyword.isascii():
+            if re.search(rf"\b{re.escape(keyword)}\b", normalized):
+                return keyword
+        elif keyword in normalized:
+            return keyword
+    return None
+
+
+def _emit_tool_progress(
+    progress_callback: ToolProgressCallback | None,
+    params: dict,
+    outcome: dict,
+) -> None:
+    if progress_callback is None:
+        return
+    try:
+        progress_callback(params, outcome)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Computer Use progress callback failed: %s", e)
+
+
+def _safety_block_reason(action: str, params: dict) -> str | None:
+    if action == "type":
+        text = str(params.get("text", ""))
+        fragment = _matching_risky_text_fragment(text)
+        if fragment is not None:
+            return (
+                "Blocked risky Computer Use action 'type': refusing to type "
+                f"text containing {fragment!r}: {text}"
+            )
+        return None
+    if action in ("key", "hold_key"):
+        spec = _translate_key_spec(str(params.get("text", "")))
+        fragment = _matching_risky_text_fragment(spec)
+        if fragment is not None:
+            return (
+                f"Blocked risky Computer Use action '{action}': refusing to "
+                f"send text containing {fragment!r}: {spec}"
+            )
+        if spec in _BLOCKED_KEY_SPECS:
+            return (
+                f"Blocked risky Computer Use action '{action}': refusing to "
+                f"send {spec!r}."
+            )
+    return None
+
+
+def _capture_selected_display(
+    display_id: int | None,
+) -> Optional[tuple[str, int, int, float]]:
+    if display_id is None:
+        return _capture_screenshot()
+    return _capture_screenshot(display_id=display_id)
+
+
 def _model() -> str:
     """Return the Claude model id to drive the Computer Use loop."""
     return os.getenv("JARVIS_COMPUTER_MODEL", DEFAULT_MODEL)
@@ -44,14 +159,18 @@ def _client():
     return anthropic.Anthropic()
 
 
-def run_computer_goal(goal: str) -> str:
+def run_computer_goal(
+    goal: str,
+    progress_callback: ToolProgressCallback | None = None,
+    display_id: int | None = None,
+) -> str:
     """Drive Anthropic Computer Use until the model produces a final text
     answer or `MAX_TURNS` triggers. Returns the final spoken result.
     """
     if not goal or not goal.strip():
         return "Missing goal for Computer Use."
 
-    shot = _capture_screenshot()
+    shot = _capture_selected_display(display_id)
     if shot is None:
         return (
             "JARVIS needs Screen Recording permission to drive Computer Use. "
@@ -117,8 +236,15 @@ def run_computer_goal(goal: str) -> str:
         tool_results: list[dict] = []
         for tu in tool_uses:
             params = getattr(tu, "input", {}) or {}
-            action = params.get("action", "")
-            outcome = _execute_action(action=action, params=params, scale=current_scale)
+            action = str(params.get("action", ""))
+            block_reason = _safety_block_reason(action, params)
+            if block_reason is None:
+                outcome = _execute_action(
+                    action=action, params=params, scale=current_scale
+                )
+            else:
+                outcome = {"type": "text", "text": block_reason}
+            _emit_tool_progress(progress_callback, params, outcome)
             if outcome.get("type") == "image":
                 current_scale = outcome.get("scale", current_scale)
                 tool_results.append(
@@ -216,7 +342,36 @@ def _logical_display_size() -> Optional[tuple[int, int]]:
         return None
 
 
-def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
+def _logical_display_bounds(display_id: int) -> Optional[tuple[int, int, int, int]]:
+    if display_id <= 0:
+        return None
+    try:
+        from AppKit import NSScreen
+        from Quartz import CGDisplayBounds
+
+        screens = NSScreen.screens()
+        if display_id > len(screens):
+            return None
+        screen_number = (
+            screens[display_id - 1].deviceDescription().get("NSScreenNumber")
+        )
+        if screen_number is None:
+            return None
+        bounds = CGDisplayBounds(int(screen_number))
+        return (
+            int(round(bounds.origin.x)),
+            int(round(bounds.origin.y)),
+            int(round(bounds.size.width)),
+            int(round(bounds.size.height)),
+        )
+    except (ImportError, AttributeError, IndexError, TypeError, ValueError) as e:
+        log.warning("logical display bounds probe failed: %s", e)
+        return None
+
+
+def _capture_screenshot(
+    display_id: int | None = None,
+) -> Optional[tuple[str, int, int, float]]:
     """Capture the main display, downscale if needed, return
     (base64_png, scaled_width, scaled_height, scale_factor).
 
@@ -235,8 +390,12 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
 
     path = _screenshot_path()
     try:
+        capture_command = ["screencapture", "-x"]
+        if display_id is not None:
+            capture_command.extend(["-D", str(display_id)])
+        capture_command.append(path)
         r = subprocess.run(
-            ["screencapture", "-x", path],
+            capture_command,
             capture_output=True,
             text=True,
             timeout=10,
@@ -276,14 +435,26 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
         # Map the sent-image width to logical points (CGEvent space). The
         # aspect ratio is preserved across physical -> sent and physical
         # -> logical, so a single scalar from width suffices.
-        logical = _logical_display_size()
-        if logical is not None and logical[0] > 0:
-            scale = logical[0] / scaled_w
+        if display_id is not None:
+            logical_bounds = _logical_display_bounds(display_id)
+            if logical_bounds is not None and logical_bounds[2] > 0:
+                origin_x, origin_y, logical_w, _logical_h = logical_bounds
+                scale = DisplayScale(
+                    logical_w / scaled_w,
+                    (float(origin_x), float(origin_y)),
+                    display_id,
+                )
+            else:
+                scale = DisplayScale(native_w / scaled_w, display_id=display_id)
         else:
-            # No logical size available: assume the capture is already in
-            # logical space (DPR=1). Correct on non-Retina; degraded but
-            # no worse than ignoring DPR on Retina.
-            scale = native_w / scaled_w
+            logical = _logical_display_size()
+            if logical is not None and logical[0] > 0:
+                scale = DisplayScale(logical[0] / scaled_w)
+            else:
+                # No logical size available: assume the capture is already in
+                # logical space (DPR=1). Correct on non-Retina; degraded but
+                # no worse than ignoring DPR on Retina.
+                scale = DisplayScale(native_w / scaled_w)
 
         with open(path, "rb") as f:
             png_bytes = f.read()
@@ -297,6 +468,20 @@ def _capture_screenshot() -> Optional[tuple[str, int, int, float]]:
             os.remove(path)
         except OSError:
             pass
+
+
+def _logical_point(x: float, y: float, scale: float) -> tuple[float, float]:
+    return (
+        float(getattr(scale, "origin_x", 0.0)) + (x * float(scale)),
+        float(getattr(scale, "origin_y", 0.0)) + (y * float(scale)),
+    )
+
+
+def _scale_display_id(scale: float) -> int | None:
+    display_id = getattr(scale, "display_id", None)
+    if isinstance(display_id, int):
+        return display_id
+    return None
 
 
 def _cg_create_mouse_event(source, event_type, point, button):
@@ -349,7 +534,7 @@ def _mouse_move(x: float, y: float, scale: float) -> bool:
             kCGMouseButtonLeft,
         )
 
-        native = (x * scale, y * scale)
+        native = _logical_point(x, y, scale)
         event = _cg_create_mouse_event(
             None, kCGEventMouseMoved, native, kCGMouseButtonLeft
         )
@@ -402,7 +587,7 @@ def _mouse_click(
             ),
         }
         down, up, btn = mapping.get(button, mapping["left"])
-        native = (x * scale, y * scale)
+        native = _logical_point(x, y, scale)
         for _ in range(max(1, count)):
             d = _cg_create_mouse_event(None, down, native, btn)
             if d is None:
@@ -435,8 +620,8 @@ def _mouse_drag(
             kCGMouseButtonLeft,
         )
 
-        start_native = (start_x * scale, start_y * scale)
-        end_native = (end_x * scale, end_y * scale)
+        start_native = _logical_point(start_x, start_y, scale)
+        end_native = _logical_point(end_x, end_y, scale)
         down = _cg_create_mouse_event(
             None, kCGEventLeftMouseDown, start_native, kCGMouseButtonLeft
         )
@@ -477,7 +662,7 @@ def _mouse_button(x: float, y: float, scale: float, *, pressed: bool) -> bool:
         )
 
         event_type = kCGEventLeftMouseDown if pressed else kCGEventLeftMouseUp
-        native = (x * scale, y * scale)
+        native = _logical_point(x, y, scale)
         event = _cg_create_mouse_event(None, event_type, native, kCGMouseButtonLeft)
         if event is None:
             return False
@@ -693,7 +878,7 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
 
     coord = params.get("coordinate") or [0, 0]
     if action == "screenshot":
-        shot = _capture_screenshot()
+        shot = _capture_selected_display(_scale_display_id(scale))
         if shot is None:
             return {
                 "type": "text",
@@ -707,7 +892,11 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
         return {"type": "image", "data": b64, "scale": new_scale}
 
     if action == "mouse_move":
-        _mouse_move(coord[0], coord[1], scale)
+        if not _mouse_move(coord[0], coord[1], scale):
+            return {
+                "type": "text",
+                "text": f"failed to move cursor to ({coord[0]}, {coord[1]})",
+            }
         return {"type": "text", "text": f"moved cursor to ({coord[0]}, {coord[1]})"}
 
     if action in (
@@ -727,7 +916,11 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
             count = 2
         elif action == "triple_click":
             count = 3
-        _mouse_click(coord[0], coord[1], scale, button=button, count=count)
+        if not _mouse_click(coord[0], coord[1], scale, button=button, count=count):
+            return {
+                "type": "text",
+                "text": f"failed {action} at ({coord[0]}, {coord[1]})",
+            }
         return {
             "type": "text",
             "text": f"{action} at ({coord[0]}, {coord[1]})",
@@ -736,7 +929,8 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
     if action == "left_click_drag":
         start = params.get("start_coordinate") or [0, 0]
         end = coord
-        _mouse_drag(start[0], start[1], end[0], end[1], scale)
+        if not _mouse_drag(start[0], start[1], end[0], end[1], scale):
+            return {"type": "text", "text": f"failed to drag from {start} to {end}"}
         return {
             "type": "text",
             "text": f"dragged from {start} to {end}",
@@ -744,7 +938,11 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
 
     if action in ("left_mouse_down", "left_mouse_up"):
         pressed = action == "left_mouse_down"
-        _mouse_button(coord[0], coord[1], scale, pressed=pressed)
+        if not _mouse_button(coord[0], coord[1], scale, pressed=pressed):
+            return {
+                "type": "text",
+                "text": f"failed {action} at ({coord[0]}, {coord[1]})",
+            }
         return {
             "type": "text",
             "text": f"{action} at ({coord[0]}, {coord[1]})",
@@ -760,7 +958,8 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
     if action == "type":
         text = str(params.get("text", ""))
         escaped = gui_actions._escape_applescript_string(text)
-        gui_actions._run_system_events(f'keystroke "{escaped}"')
+        if not gui_actions._run_system_events(f'keystroke "{escaped}"'):
+            return {"type": "text", "text": f"failed to type: {text}"}
         return {"type": "text", "text": f"typed: {text}"}
 
     if action == "key":
@@ -773,13 +972,18 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
             applescript = f"key code {key_code}" + mod_clause
         else:
             return {"type": "text", "text": f"unsupported key spec: {spec}"}
-        gui_actions._run_system_events(applescript)
+        if not gui_actions._run_system_events(applescript):
+            return {"type": "text", "text": f"failed to send key: {spec}"}
         return {"type": "text", "text": f"sent key: {spec}"}
 
     if action == "scroll":
         direction = str(params.get("scroll_direction", "down")).lower()
         amount = int(params.get("scroll_amount", 1))
-        gui_actions._scroll_via_cgevent(direction, amount)
+        if not gui_actions._scroll_via_cgevent(direction, amount):
+            return {
+                "type": "text",
+                "text": f"failed to scroll {direction} {amount} line(s)",
+            }
         return {
             "type": "text",
             "text": f"scrolled {direction} {amount} line(s)",
@@ -797,9 +1001,11 @@ def _execute_action(action: str, params: dict, scale: float) -> dict:
         if position is None:
             return {"type": "text", "text": "cursor_position unavailable"}
         x, y = position
+        origin_x = float(getattr(scale, "origin_x", 0.0))
+        origin_y = float(getattr(scale, "origin_y", 0.0))
         return {
             "type": "text",
-            "text": f"cursor_position at ({x / scale}, {y / scale})",
+            "text": f"cursor_position at ({(x - origin_x) / scale}, {(y - origin_y) / scale})",
         }
 
     return {"type": "text", "text": f"unsupported action: {action}"}

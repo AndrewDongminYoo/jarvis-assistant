@@ -196,6 +196,7 @@ class ActionResult:
 
 
 StepCallback = Callable[[str, ActionResult], Awaitable[None]]
+ComputerProgressCallback = Callable[[dict, dict], None]
 
 
 def _step_kind(tag: str) -> str:
@@ -207,6 +208,8 @@ def _step_kind(tag: str) -> str:
 
 
 def _step_summary(tag: str, result: ActionResult) -> str:
+    if tag.upper().startswith("COMPUTER:TOOL:"):
+        return result.text
     kind = _step_kind(tag)
     if result.status == "blocked":
         return f"{kind} blocked."
@@ -215,11 +218,49 @@ def _step_summary(tag: str, result: ActionResult) -> str:
     return f"{kind} completed."
 
 
+def _computer_progress_result(params: dict, outcome: dict) -> tuple[str, ActionResult]:
+    action = str(params.get("action") or "tool")
+    text = str(outcome.get("text") or f"{action} completed.")
+    lowered = text.lower()
+    if lowered.startswith("blocked"):
+        status: Literal["completed", "failed", "blocked"] = "blocked"
+    elif lowered.startswith("failed") or " failed" in lowered:
+        status = "failed"
+    else:
+        status = "completed"
+    return (
+        f"COMPUTER:TOOL:{action}",
+        ActionResult(f"Computer Use {action}: {text}", status=status),
+    )
+
+
+def _computer_progress_callback(
+    on_step: StepCallback | None,
+) -> ComputerProgressCallback | None:
+    if on_step is None:
+        return None
+    loop = asyncio.get_running_loop()
+
+    def emit(params: dict, outcome: dict) -> None:
+        tag, result = _computer_progress_result(params, outcome)
+        future = asyncio.run_coroutine_threadsafe(on_step(tag, result), loop)
+        try:
+            future.result(timeout=5)
+        except Exception as e:  # noqa: BLE001
+            log.warning("Computer Use step emission failed: %s", e)
+
+    return emit
+
+
 async def dispatch_action(tag: str) -> str:
     return (await _dispatch_action_result(tag)).text
 
 
-async def _dispatch_action_result(tag: str) -> ActionResult:
+async def _dispatch_action_result(
+    tag: str,
+    computer_progress_callback: ComputerProgressCallback | None = None,
+    ui_context: dict | None = None,
+) -> ActionResult:
     parts = tag.split(":", 2)
     kind = parts[0].upper()
 
@@ -486,7 +527,14 @@ async def _dispatch_action_result(tag: str) -> ActionResult:
         goal = goal.strip()
         if not goal:
             return ActionResult("COMPUTER needs a non-empty goal.", status="failed")
-        text = await asyncio.to_thread(run_computer_goal, goal)
+        if computer_progress_callback is None:
+            text = await asyncio.to_thread(run_computer_goal, goal)
+        else:
+            text = await asyncio.to_thread(
+                run_computer_goal,
+                goal,
+                computer_progress_callback,
+            )
         return ActionResult(
             text,
             status=(
@@ -633,7 +681,13 @@ async def handle_message(ws: WebSocket, text: str) -> None:
             return
         if safety.is_affirmative(text):
             try:
-                result = await _dispatch_action_result(pending_existing.action)
+                if _step_kind(pending_existing.action) == "COMPUTER":
+                    result = await _dispatch_action_result(
+                        pending_existing.action,
+                        _computer_progress_callback(send_step),
+                    )
+                else:
+                    result = await _dispatch_action_result(pending_existing.action)
             except Exception as e:  # noqa: BLE001
                 log.error("Confirmed action failed: %s", e)
                 result = ActionResult(f"error: {e}", status="failed")

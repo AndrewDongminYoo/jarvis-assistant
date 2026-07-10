@@ -214,6 +214,58 @@ def test_handle_message_emits_failed_step_for_empty_recall(monkeypatch):
     }
 
 
+def test_handle_message_confirmed_computer_emits_internal_tool_step(monkeypatch):
+    import time as _time
+
+    import computer_use
+
+    fake_router = FakeRouter(["Computer work finished."])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    def fake_run(goal, progress_callback=None):
+        assert goal == "click the visible button"  # nosec B101
+        assert progress_callback is not None  # nosec B101
+        progress_callback(
+            {"action": "left_click", "coordinate": [10, 20]},
+            {"type": "text", "text": "left_click at (10, 20)"},
+        )
+        return "Clicked it."
+
+    monkeypatch.setattr(computer_use, "run_computer_goal", fake_run)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    server._pending.clear()
+    server._pending[server._ws_id(ws)] = server.PendingAction(
+        action="COMPUTER:click the visible button",
+        history=[],
+        asked_at=_time.time(),
+    )
+
+    run(server.handle_message(ws, "yes"))
+
+    steps = [m for m in ws.sent if m["type"] == "step"]
+    assert len(steps) == 2  # nosec B101
+    assert steps[0]["kind"] == "COMPUTER"  # nosec B101
+    assert "left_click" in steps[0]["summary"]  # nosec B101
+    assert steps[1] == {  # nosec B101
+        "type": "step",
+        "kind": "COMPUTER",
+        "summary": "COMPUTER completed.",
+    }
+
+
 def test_action_results_mark_validation_failures():
     results = [
         run(server._dispatch_action_result("TASK:CREATE:")),

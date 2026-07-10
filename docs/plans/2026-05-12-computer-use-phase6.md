@@ -15,10 +15,10 @@ This plan's task checklist has been reconciled with the current code: `computer_
 
 **Out of scope:**
 
-- Per-tool-action voice re-confirmation inside the loop. `safety.classify("COMPUTER:goal")` already gates the entire session at `CONFIRM`; once the user authorizes the goal the loop runs without further interrupts. Stricter policies are a follow-up plan.
-- Multi-display support. V1 always captures and acts on the **main** display.
+- Per-tool-action voice re-confirmation inside the loop. `safety.classify("COMPUTER:goal")` already gates the entire session at `CONFIRM`; once the user authorizes the goal the loop runs without further voice interrupts. Internal tool safety blocking is implemented for destructive text, risky key chords, and payment or credential keywords.
+- Voice-level display selection. `computer_use.py` can capture and act on a selected display id, but the public action tag still defaults to `[ACTION:COMPUTER:goal]`.
 - Native macOS Screen Recording permission UI integration. We surface the same kind of error narrate that phase 4's Accessibility prompt uses; the user grants the permission in System Settings just like the AX one.
-- Per-tool Computer Use `step` progress. The generic server action-loop `step` message has landed; surfacing every internal Computer Use tool action remains separate.
+- Per-tool-action voice narration. Internal Computer Use tool actions now emit websocket `step` progress, but the assistant does not speak after every internal tool action.
 
 ---
 
@@ -1552,6 +1552,8 @@ The GUI stack now supports both the AX fast path (phase 4+5) and the vision-grou
 - System prompt teaches the model to prefer UI:OBSERVE → UI:\* and reach for COMPUTER only as a fallback.
 - `safety.classify` already gates COMPUTER on `CONFIRM` (and BLOCKED on payment keywords) — no safety changes.
 - Phase 5 helpers (`_run_system_events`, `_escape_applescript_string`, `_parse_key_spec`, `_scroll_via_cgevent`) are reused — Computer Use's `type`/`key`/`scroll` actions don't duplicate AppleScript or CGEvent code.
+- Internal Computer Use tool actions now emit websocket `step` progress and run through a second safety check before local execution.
+- The screenshot and coordinate helpers accept an optional display id for selected-display execution.
 
 Minimum verification: `uv run pytest -v` (green). Manual end-to-end smoke:
 
@@ -1561,6 +1563,13 @@ Minimum verification: `uv run pytest -v` (green). Manual end-to-end smoke:
 
 ## Follow-ups (separate plans)
 
-1. Per-tool Computer Use `step` progress — surface each internal tool action ("clicked Chrome", "typed asyncio") to the UI so the user can see progress inside the Computer Use loop.
-2. Per-tool-action safety gating inside the loop (e.g. re-confirm when Computer Use is about to click a button whose visible label looks risky). YAGNI until we observe real misuse.
-3. Multi-display support (currently main display only). The screenshot pipeline would need a display-id parameter and the click helpers would need to know which display's coordinate space they're in.
+Completed since this plan:
+
+1. Per-tool Computer Use `step` progress — implemented through the server progress callback so UI clients can see each internal tool action.
+2. Per-tool-action safety blocking inside the loop — implemented for destructive text, risky key chords, and payment or credential keywords.
+3. Selected-display support — implemented in the screenshot pipeline and coordinate helpers with an optional display id.
+
+Future UX extensions:
+
+1. Voice-level display selection grammar for users who need to choose a non-default monitor by speech.
+2. Per-tool-action voice re-confirmation for higher-risk workflows; current behavior blocks risky internal actions instead of pausing for a second confirmation.
