@@ -320,5 +320,6 @@ pyrightconfig.json
 *.log
 data/*.jsonl
 data/active_session.json
+data/provider_pref.json
 data/.jarvis_output.txt
 data/work_sessions/
