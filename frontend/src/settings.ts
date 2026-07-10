@@ -50,6 +50,71 @@ export function initSettings(): void {
   languageGroup.appendChild(languageSelect);
   formWrap.appendChild(languageGroup);
 
+  // Preferred LLM provider
+  const providerGroup = document.createElement("div");
+  providerGroup.className = "settings-group";
+
+  const providerLabel = document.createElement("label");
+  providerLabel.className = "settings-label";
+  providerLabel.htmlFor = "s-llm-provider";
+  providerLabel.textContent = "Preferred LLM";
+
+  const providerSelect = document.createElement("select");
+  providerSelect.id = "s-llm-provider";
+  providerSelect.className = "settings-input";
+  providerSelect.disabled = true; // enabled after availability loads
+
+  const providerLabels: Record<string, string> = {
+    anthropic: "Claude (Anthropic)",
+    openai: "GPT (OpenAI)",
+    gemini: "Gemini (Google)",
+  };
+
+  const autoOption = document.createElement("option");
+  autoOption.value = "";
+  autoOption.textContent = "Auto (default order)";
+  providerSelect.appendChild(autoOption);
+
+  Object.entries(providerLabels).forEach(([value, label]) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.disabled = true; // enabled per availability in loadProviders()
+    providerSelect.appendChild(option);
+  });
+
+  providerGroup.appendChild(providerLabel);
+  providerGroup.appendChild(providerSelect);
+  formWrap.appendChild(providerGroup);
+
+  async function loadProviders(): Promise<void> {
+    try {
+      const res = await fetch("/api/providers");
+      if (!res.ok) return;
+      const data = (await res.json()) as {
+        available: string[];
+        preferred: string | null;
+      };
+      Array.from(providerSelect.options).forEach((opt) => {
+        opt.disabled = opt.value !== "" && !data.available.includes(opt.value);
+      });
+      providerSelect.value = data.preferred ?? "";
+      providerSelect.disabled = false;
+    } catch {
+      // settings are a convenience; ignore fetch failures
+    }
+  }
+
+  providerSelect.addEventListener("change", () => {
+    void fetch("/api/providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred: providerSelect.value || null }),
+    }).catch(() => {
+      /* ignore — non-critical */
+    });
+  });
+
   panel.appendChild(formWrap);
 
   const closeBtn = document.createElement("button");
@@ -57,7 +122,10 @@ export function initSettings(): void {
   closeBtn.textContent = "Close";
   panel.appendChild(closeBtn);
 
-  btn.addEventListener("click", () => panel.classList.remove("hidden"));
+  btn.addEventListener("click", () => {
+    panel.classList.remove("hidden");
+    void loadProviders();
+  });
   closeBtn.addEventListener("click", () => panel.classList.add("hidden"));
   panel.addEventListener("click", (e) => {
     if (e.target === panel) panel.classList.add("hidden");
