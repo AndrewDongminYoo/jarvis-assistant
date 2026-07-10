@@ -531,6 +531,8 @@ def test_api_set_provider_rejects_unknown(monkeypatch, tmp_path):
     assert excinfo.value.status_code == 400  # nosec B101
     # router untouched
     assert router.preferred is None  # nosec B101
+    # persistence file was never written
+    assert not (tmp_path / "p.json").exists()  # nosec B101
 
 
 def test_load_provider_pref_applies_saved_choice(monkeypatch, tmp_path):

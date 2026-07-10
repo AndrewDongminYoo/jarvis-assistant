@@ -516,6 +516,7 @@ class LLMRouter:
             provider.name == name
             for providers_for_task in self._base_routes.values()
             for provider in providers_for_task
+            if not getattr(provider, "is_cli_fallback", False)
         )
         self.preferred = name if valid else None
         self.routes = {
