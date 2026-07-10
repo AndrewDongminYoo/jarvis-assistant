@@ -72,6 +72,7 @@ Existing tags are unchanged. New tags:
                                  # screenshot↔action loop, bounded by its own
                                  # step budget, and returns a final result
                                  # string to the outer loop
+[ACTION:COMPUTER:@N goal]        # same, but target display N (1-based, 1 = main)
 ```
 
 The system prompt is updated to teach the model:
@@ -276,7 +277,7 @@ Implemented in the current codebase:
 7. Optional `step` WebSocket message and frontend progress indicator.
 8. `MAIL:SEND:recipient::body` dispatch through Apple Mail after confirmation.
 9. One-turn `UI:OBSERVE` snapshot reuse for the immediately following `UI:CLICK`, owned by a per-turn loop-local in `server._run_action_loop` (no module-global cache, so concurrent turns stay isolated).
-10. Computer Use internal tool progress, per-tool safety blocking, and selected-display screenshot/coordinate support.
+10. Computer Use internal tool progress, per-tool safety blocking, and selected-display screenshot/coordinate support (a `COMPUTER` goal may target display N via an `@N` prefix, e.g. `[ACTION:COMPUTER:@2 click Export]`).
 
 ## Future Product Questions
 

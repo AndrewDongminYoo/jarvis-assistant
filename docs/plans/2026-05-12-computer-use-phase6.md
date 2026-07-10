@@ -1,7 +1,7 @@
 # Computer Use Phase 6 Implementation Plan
 
 **Status:** Implemented.
-This plan's task checklist has been reconciled with the current code: `computer_use.py` exports `run_computer_goal(goal)`, the server routes `[ACTION:COMPUTER:goal]`, the system prompt documents the fallback ordering, and the macOS live test exists behind the default-deselected `macos` marker.
+This plan's task checklist has been reconciled with the current code: `computer_use.py` exports `run_computer_goal(goal, progress_callback=None, display_id=None)`, the server routes `[ACTION:COMPUTER:goal]` (with an optional `@N` display prefix), the system prompt documents the fallback ordering, and the macOS live test exists behind the default-deselected `macos` marker.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1547,7 +1547,7 @@ git commit -m "test(computer): add live Computer Use round-trip test"
 
 The GUI stack now supports both the AX fast path (phase 4+5) and the vision-grounded fallback (phase 6):
 
-- `computer_use.py` exports `run_computer_goal(goal)` plus its internal screenshot, mouse, and tool-dispatch helpers.
+- `computer_use.py` exports `run_computer_goal(goal, progress_callback=None, display_id=None)` plus its internal screenshot, mouse, and tool-dispatch helpers.
 - `server.py:dispatch_action` routes `COMPUTER:<goal>` through `asyncio.to_thread` (the loop is sync because of pyobjc + subprocess).
 - System prompt teaches the model to prefer UI:OBSERVE → UI:\* and reach for COMPUTER only as a fallback.
 - `safety.classify` already gates COMPUTER on `CONFIRM` (and BLOCKED on payment keywords) — no safety changes.
@@ -1567,9 +1567,8 @@ Completed since this plan:
 
 1. Per-tool Computer Use `step` progress — implemented through the server progress callback so UI clients can see each internal tool action.
 2. Per-tool-action safety blocking inside the loop — implemented for destructive text, risky key chords, and payment or credential keywords.
-3. Selected-display support — implemented in the screenshot pipeline and coordinate helpers with an optional display id.
+3. Selected-display support — implemented in the screenshot pipeline and coordinate helpers with an optional display id, and reachable from the public action: a `COMPUTER` goal may start with `@N` (1-based, 1 = main) to target display N, e.g. `[ACTION:COMPUTER:@2 click Export]`. The dispatcher parses the prefix and passes `display_id` to `run_computer_goal`.
 
 Future UX extensions:
 
-1. Voice-level display selection grammar for users who need to choose a non-default monitor by speech.
-2. Per-tool-action voice re-confirmation for higher-risk workflows; current behavior blocks risky internal actions instead of pausing for a second confirmation.
+1. Per-tool-action voice re-confirmation for higher-risk workflows; current behavior blocks risky internal actions instead of pausing for a second confirmation.
