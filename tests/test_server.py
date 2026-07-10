@@ -4,9 +4,13 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import server  # noqa: E402
+from llm_router import LLMRouter  # noqa: E402
 from memory import Memory  # noqa: E402
 
 
@@ -471,3 +475,82 @@ def test_system_prompt_prefers_ui_observe_over_computer():
     assert "OBSERVE" in prompt  # nosec B101
     # The model is told to prefer AX-based UI actions when feasible.
     assert "fallback" in prompt.lower() or "when" in prompt.lower()  # nosec B101
+
+
+# ---------------------------------------------------------------------------
+# /api/providers
+# ---------------------------------------------------------------------------
+
+
+class _Prov:
+    def __init__(self, name):
+        self.name = name
+
+
+def _install_fake_router(monkeypatch, order=("anthropic", "openai")):
+    provs = [_Prov(n) for n in order]
+    router = LLMRouter(
+        routes={t: list(provs) for t in ("voice", "work", "plan", "narrate")}
+    )
+    monkeypatch.setattr(server, "_router", router)
+    return router
+
+
+def test_api_providers_get_returns_available_and_preferred(monkeypatch):
+    _install_fake_router(monkeypatch)
+    data = run(server.api_providers())
+    assert data["available"] == ["anthropic", "openai"]  # nosec B101
+    assert data["preferred"] is None  # nosec B101
+
+
+def test_api_set_provider_reorders_and_persists(monkeypatch, tmp_path):
+    router = _install_fake_router(monkeypatch)
+    pref_file = tmp_path / "provider_pref.json"
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", pref_file)
+
+    data = run(server.api_set_provider({"preferred": "openai"}))
+    assert data["preferred"] == "openai"  # nosec B101
+    assert router.routes["voice"][0].name == "openai"  # nosec B101
+    assert pref_file.read_text().strip() == '{"preferred": "openai"}'  # nosec B101
+
+
+def test_api_set_provider_null_clears(monkeypatch, tmp_path):
+    router = _install_fake_router(monkeypatch)
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", tmp_path / "p.json")
+    run(server.api_set_provider({"preferred": "openai"}))
+    data = run(server.api_set_provider({"preferred": None}))
+    assert data["preferred"] is None  # nosec B101
+    assert router.routes["voice"][0].name == "anthropic"  # nosec B101
+
+
+def test_api_set_provider_rejects_unknown(monkeypatch, tmp_path):
+    router = _install_fake_router(monkeypatch)
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", tmp_path / "p.json")
+    with pytest.raises(HTTPException) as excinfo:
+        run(server.api_set_provider({"preferred": "bogus"}))
+    assert excinfo.value.status_code == 400  # nosec B101
+    # router untouched
+    assert router.preferred is None  # nosec B101
+
+
+def test_load_provider_pref_applies_saved_choice(monkeypatch, tmp_path):
+    router = _install_fake_router(monkeypatch)
+    pref_file = tmp_path / "p.json"
+    pref_file.write_text('{"preferred": "openai"}')
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", pref_file)
+    server._load_provider_pref()
+    assert router.preferred == "openai"  # nosec B101
+
+
+def test_load_provider_pref_ignores_missing_or_corrupt(monkeypatch, tmp_path):
+    router = _install_fake_router(monkeypatch)
+    # missing file
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", tmp_path / "absent.json")
+    server._load_provider_pref()
+    assert router.preferred is None  # nosec B101
+    # corrupt file
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", bad)
+    server._load_provider_pref()
+    assert router.preferred is None  # nosec B101

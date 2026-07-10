@@ -101,6 +101,24 @@ Default provider order per task:
 Providers without API keys are skipped. Failed providers are logged and the
 router falls back to the next configured provider.
 
+#### Preferred provider (runtime override)
+
+The per-task order above is the default. From the web settings panel
+("Preferred LLM") the user can move one provider to the front of every
+task's order at runtime. The choice is stored in `data/provider_pref.json`
+and re-applied at startup on top of the env defaults; "Auto" clears it.
+
+- `GET /api/providers` → `{ "available": [<provider>, …], "preferred": <provider|null> }`
+  (`available` = providers whose API key is present at startup).
+- `POST /api/providers` with `{ "preferred": <provider|null> }` reorders the
+  live router and persists the choice; an unknown or unavailable name returns
+  `400`.
+
+Like the rest of `/api/*`, these endpoints are unauthenticated and are only
+safe under the default loopback bind. `POST /api/providers` mutates routing
+config, so do not expose the server (see the `HOST` warning above) with these
+endpoints reachable.
+
 #### Local CLI fallback
 
 When every API provider for a task fails and at least one failure is a

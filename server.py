@@ -3,6 +3,7 @@
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import re
@@ -15,7 +16,7 @@ from typing import Literal, Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -38,6 +39,28 @@ SSL_CERT = Path("cert.pem")
 SSL_KEY = Path("key.pem")
 
 _router = LLMRouter.from_env()
+
+PROVIDER_PREF_PATH = Path("data/provider_pref.json")
+
+
+def _load_provider_pref() -> None:
+    """Apply a persisted provider preference on top of the env default order.
+    A missing, unreadable, or unknown-provider file is ignored."""
+    try:
+        name = json.loads(PROVIDER_PREF_PATH.read_text()).get("preferred")
+    except (OSError, ValueError):
+        return
+    if isinstance(name, str) and name in _router.available_providers():
+        _router.prefer(name)
+
+
+def _save_provider_pref(name: str | None) -> None:
+    PROVIDER_PREF_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PROVIDER_PREF_PATH.write_text(json.dumps({"preferred": name}))
+
+
+_load_provider_pref()
+
 _mem = Memory()
 
 
@@ -917,6 +940,27 @@ async def api_status():
 @app.get("/api/health")
 async def api_health():
     return {"ok": True}
+
+
+@app.get("/api/providers")
+async def api_providers():
+    return {
+        "available": _router.available_providers(),
+        "preferred": _router.preferred,
+    }
+
+
+@app.post("/api/providers")
+async def api_set_provider(body: dict):
+    name = body.get("preferred")
+    if name is not None and name not in _router.available_providers():
+        raise HTTPException(status_code=400, detail="unknown or unavailable provider")
+    _router.prefer(name)
+    _save_provider_pref(_router.preferred)
+    return {
+        "available": _router.available_providers(),
+        "preferred": _router.preferred,
+    }
 
 
 @app.get("/api/memory/facts")
