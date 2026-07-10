@@ -554,3 +554,12 @@ def test_load_provider_pref_ignores_missing_or_corrupt(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "PROVIDER_PREF_PATH", bad)
     server._load_provider_pref()
     assert router.preferred is None  # nosec B101
+
+
+def test_load_provider_pref_ignores_non_dict_payload(monkeypatch, tmp_path):
+    router = _install_fake_router(monkeypatch)
+    non_dict = tmp_path / "non_dict.json"
+    non_dict.write_text("[]")
+    monkeypatch.setattr(server, "PROVIDER_PREF_PATH", non_dict)
+    server._load_provider_pref()
+    assert router.preferred is None  # nosec B101
