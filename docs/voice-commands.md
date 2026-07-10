@@ -44,6 +44,9 @@ Korean and English freely; JARVIS responds in the same mix.
 - "Any new emails?"
 - "Search mail for invoice" / "송장 메일 찾아줘"
 - "Find emails from Sarah"
+- "Send an email to Anna saying I'll be five minutes late"
+
+Outbound mail always asks for confirmation before Apple Mail sends it.
 
 ### Notes
 

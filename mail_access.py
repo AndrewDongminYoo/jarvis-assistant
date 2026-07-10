@@ -1,7 +1,10 @@
-# mail_access.py — Read-only Apple Mail access via AppleScript
 import subprocess
 
 APPLESCRIPT_TIMEOUT = 30
+
+
+def _escape_applescript_string(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _run(script: str) -> str:
@@ -71,3 +74,32 @@ def get_mail_summary() -> str:
     subjects = get_recent_subjects()
     lines = "\n".join(f"- {s}" for s in subjects)
     return f"You have {count} unread messages. Recent subjects:\n{lines}"
+
+
+def send_mail(recipient: str, body: str) -> bool:
+    recipient_clean = recipient.strip()
+    body_clean = body.strip()
+    if not recipient_clean or not body_clean:
+        return False
+
+    escaped_recipient = _escape_applescript_string(recipient_clean)
+    escaped_body = _escape_applescript_string(body_clean)
+    script = f"""
+tell application "Mail"
+    set newMessage to make new outgoing message with properties {{visible:false, subject:"Message from JARVIS", content:"{escaped_body}"}}
+    tell newMessage
+        make new to recipient at end of to recipients with properties {{address:"{escaped_recipient}"}}
+        send
+    end tell
+end tell
+"""
+    try:
+        r = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=APPLESCRIPT_TIMEOUT,
+        )
+        return r.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False

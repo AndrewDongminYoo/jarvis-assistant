@@ -218,7 +218,7 @@ def test_action_results_mark_validation_failures():
     results = [
         run(server._dispatch_action_result("TASK:CREATE:")),
         run(server._dispatch_action_result("TASK:DONE:not-number")),
-        run(server._dispatch_action_result("MAIL:SEND:a@b.com::hi")),
+        run(server._dispatch_action_result("MAIL:SEND:a@b.com")),
     ]
 
     assert [r.status for r in results] == ["failed", "failed", "failed"]  # nosec B101

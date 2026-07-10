@@ -370,9 +370,48 @@ def test_dispatch_action_computer_empty_goal_rejected():
     assert "goal" in result.lower() or "empty" in result.lower()  # nosec B101
 
 
+def test_dispatch_action_routes_mail_send(monkeypatch):
+    import mail_access
+
+    called = {}
+
+    def fake_send(recipient, body):
+        called["args"] = (recipient, body)
+        return True
+
+    monkeypatch.setattr(mail_access, "send_mail", fake_send)
+    result = run(server._dispatch_action_result("MAIL:SEND:anna@example.com::hello"))
+
+    assert called["args"] == ("anna@example.com", "hello")  # nosec B101
+    assert result.status == "completed"  # nosec B101
+    assert "anna@example.com" in result.text  # nosec B101
+
+
+def test_dispatch_action_mail_send_rejects_malformed_payload(monkeypatch):
+    import mail_access
+
+    def must_not_run(*_args, **_kwargs):
+        raise AssertionError("send_mail must not run for malformed payload")
+
+    monkeypatch.setattr(mail_access, "send_mail", must_not_run)
+
+    results = [
+        run(server._dispatch_action_result("MAIL:SEND:anna@example.com")),
+        run(server._dispatch_action_result("MAIL:SEND:::hello")),
+        run(server._dispatch_action_result("MAIL:SEND:anna@example.com::")),
+    ]
+
+    assert [r.status for r in results] == ["failed", "failed", "failed"]  # nosec B101
+
+
 def test_system_prompt_mentions_computer_tag():
     prompt = server._build_system_prompt()
     assert "[ACTION:COMPUTER:" in prompt  # nosec B101
+
+
+def test_system_prompt_mentions_mail_send_tag():
+    prompt = server._build_system_prompt()
+    assert "[ACTION:MAIL:SEND:recipient::body]" in prompt  # nosec B101
 
 
 def test_system_prompt_prefers_ui_observe_over_computer():

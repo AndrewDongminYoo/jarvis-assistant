@@ -162,6 +162,7 @@ output, runs the integration, then re-asks the router (`narrate` task) for a
 | `[ACTION:CALENDAR]`                    | Upcoming events from Apple Calendar                                    |
 | `[ACTION:MAIL]`                        | Unread mail summary from Apple Mail                                    |
 | `[ACTION:MAIL:SEARCH:query]`           | Search mail by subject/sender                                          |
+| `[ACTION:MAIL:SEND:recipient::body]`   | Send mail through Apple Mail after confirmation                        |
 | `[ACTION:NOTES:LIST]`                  | List Apple Notes titles                                                |
 | `[ACTION:NOTES:READ:title]`            | Read a note body                                                       |
 | `[ACTION:NOTES:CREATE:title::content]` | Create a new note                                                      |

@@ -95,6 +95,7 @@ Embed ONE action tag per response when system access is needed:
   [ACTION:CALENDAR]                      — upcoming calendar events
   [ACTION:MAIL]                          — unread mail summary
   [ACTION:MAIL:SEARCH:query]             — search mail
+  [ACTION:MAIL:SEND:recipient::body]     — send an email after user confirmation
   [ACTION:NOTES:LIST]                    — list note titles
   [ACTION:NOTES:READ:title]              — read a note
   [ACTION:NOTES:CREATE:title::content]   — create a note
@@ -241,6 +242,24 @@ async def _dispatch_action_result(tag: str) -> ActionResult:
                 "\n".join(f"- {i['subject']} from {i['sender']}" for i in items)
                 if items
                 else "No matching mail found."
+            )
+        if len(parts) >= 3 and sub == "SEND":
+            from mail_access import send_mail
+
+            recipient, sep, body = parts[2].partition("::")
+            if not sep:
+                return ActionResult("MAIL:SEND needs recipient::body.", status="failed")
+            recipient_clean = recipient.strip()
+            body_clean = body.strip()
+            if not recipient_clean or not body_clean:
+                return ActionResult(
+                    "MAIL:SEND needs a non-empty recipient and body.",
+                    status="failed",
+                )
+            ok = await asyncio.to_thread(send_mail, recipient_clean, body_clean)
+            return ActionResult(
+                (f"Mail sent to {recipient_clean}." if ok else "Failed to send mail."),
+                status="completed" if ok else "failed",
             )
         return ActionResult(f"Unknown MAIL action: {sub}", status="failed")
 
