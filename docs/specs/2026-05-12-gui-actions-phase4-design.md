@@ -314,13 +314,18 @@ Single PR:
 Phase 5 (CLICK/TYPE/KEY/SCROLL) lands in a separate plan once OBSERVE's
 output stability is confirmed across several apps.
 
-## Open Questions
+## Resolved Questions
 
-- Should OBSERVE cache the last observation for one turn so a follow-up
-  CLICK doesn't need a second AX walk? Defer until phase 5 shows the cost.
-- For apps that don't cleanly expose AX (web canvases, Electron with
-  Accessibility disabled), what's the graceful degradation? Currently a
-  near-empty tree. Document in phase 6 (computer_use) as the fallback
-  trigger.
+- OBSERVE now returns a `UIObservation` snapshot (app identity + live AX root) so an immediate follow-up CLICK in the SAME action turn can reuse the root without a second walk.
+  The snapshot is owned per-turn by `server._run_action_loop` (a loop-local `ui_context`), not by module state in `gui_actions`; only OBSERVE populates it, only the next CLICK consumes it, and any other step drops it.
+  Because ownership is a loop local, concurrent websocket turns cannot clear or consume each other's snapshot.
+  `click_element` re-validates the frontmost identity before reuse, so a focus change between OBSERVE and CLICK falls back to a fresh lookup.
+- AX traversal now has a cooperative wall-clock budget in addition to `MAX_ELEMENTS` and `MAX_DEPTH`.
+  Current code uses `TRAVERSE_BUDGET_SECONDS = 2.0`, checked between AX calls, and emits a budget marker when the guard trips.
+  This is a cooperative cap: it bounds a large-but-responsive tree (many fast AX calls) but cannot interrupt a single stalled `AXUIElementCopyAttributeValue`. Truly pathological per-call latency is out of scope for this guard.
+- Apps that do not expose useful AX trees now degrade to the Phase 6 Computer Use fallback.
+
+## Future Questions
+
 - Do we need a way to override `MAX_ELEMENTS` per call? Probably yes
   eventually, but YAGNI for phase 4.

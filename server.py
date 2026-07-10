@@ -441,9 +441,13 @@ async def _dispatch_action_result(
                 status="completed" if text.startswith("Focused ") else "failed",
             )
         if sub == "OBSERVE":
-            from gui_actions import observe_frontmost
+            from gui_actions import observe_frontmost_snapshot
 
-            text = await asyncio.to_thread(observe_frontmost)
+            text, snapshot = await asyncio.to_thread(observe_frontmost_snapshot)
+            if ui_context is not None:
+                # Snapshot is None on any failure, so a failed observe leaves no
+                # reusable root for a follow-up CLICK.
+                ui_context["observation"] = snapshot
             return ActionResult(
                 text,
                 status=(
@@ -471,7 +475,10 @@ async def _dispatch_action_result(
                     "UI:CLICK needs a non-empty role and label.",
                     status="failed",
                 )
-            text = await asyncio.to_thread(click_element, role_clean, label_clean)
+            observation = ui_context.get("observation") if ui_context else None
+            text = await asyncio.to_thread(
+                click_element, role_clean, label_clean, observation
+            )
             return ActionResult(
                 text,
                 status="completed" if text.startswith("Clicked ") else "failed",
@@ -608,6 +615,11 @@ async def _run_action_loop(
 
     history = list(messages)
     steps: list[tuple[str, str]] = []
+    # Per-turn UI observation cache, owned entirely by this loop. UI:OBSERVE
+    # populates it; the immediately-following UI:CLICK reuses it; any other
+    # step clears it. Being a loop-local means concurrent websocket turns can
+    # never clear or consume each other's snapshot.
+    ui_context: dict = {}
     raw = ""
     for _ in range(max_steps):
         raw = await _router.complete(
@@ -634,10 +646,20 @@ async def _run_action_loop(
             result = ActionResult(f"blocked: {safety.reason(tag)}", status="blocked")
         else:
             try:
-                result = await _dispatch_action_result(tag)
+                if _step_kind(tag) == "COMPUTER":
+                    result = await _dispatch_action_result(
+                        tag,
+                        _computer_progress_callback(on_step),
+                    )
+                else:
+                    result = await _dispatch_action_result(tag, ui_context=ui_context)
             except Exception as e:  # noqa: BLE001
                 log.error("Action dispatch error: %s", e)
                 result = ActionResult(f"error: {e}", status="failed")
+        # Only a successful OBSERVE keeps its snapshot for the next CLICK; every
+        # other step (CLICK consume, FOCUS, TYPE, non-UI, blocked, …) drops it.
+        if _step_kind(tag) != "UI:OBSERVE":
+            ui_context.pop("observation", None)
         steps.append((tag, result.text))
         if on_step is not None:
             await on_step(tag, result)

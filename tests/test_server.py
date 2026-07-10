@@ -200,8 +200,8 @@ def test_dispatch_action_routes_ui_observe(monkeypatch):
 
     monkeypatch.setattr(
         gui_actions,
-        "observe_frontmost",
-        lambda: 'window "Inbox"\n  button "Send"',
+        "observe_frontmost_snapshot",
+        lambda: ('window "Inbox"\n  button "Send"', None),
     )
     result = run(server.dispatch_action("UI:OBSERVE"))
     assert "Inbox" in result and "Send" in result  # nosec B101
@@ -250,7 +250,7 @@ def test_dispatch_action_routes_ui_click(monkeypatch):
 
     called = {}
 
-    def fake_click(role, label):
+    def fake_click(role, label, observation=None):
         called["args"] = (role, label)
         return "Clicked button: Send."
 

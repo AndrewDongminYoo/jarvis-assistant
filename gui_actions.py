@@ -395,6 +395,20 @@ def is_accessibility_permitted() -> bool:
     return _ax_is_trusted()
 
 
+def _frontmost_app_identity() -> Optional[tuple[str, int]]:
+    from Cocoa import NSWorkspace  # type: ignore
+
+    workspace = NSWorkspace.sharedWorkspace()
+    app = workspace.frontmostApplication()
+    if app is None:
+        return None
+    name = app.localizedName()
+    pid = app.processIdentifier()
+    if not name or not pid:
+        return None
+    return str(name), int(pid)
+
+
 def _running_apps() -> list[dict]:
     """Return [{name, pid}, ...] for every running app. Lazy pyobjc."""
     from Cocoa import NSWorkspace  # type: ignore
@@ -473,37 +487,74 @@ def _frontmost_app() -> Optional[dict]:
     Lazy pyobjc.
     """
     from ApplicationServices import AXUIElementCreateApplication  # type: ignore
-    from Cocoa import NSWorkspace  # type: ignore
 
-    workspace = NSWorkspace.sharedWorkspace()
-    app = workspace.frontmostApplication()
-    if app is None:
+    identity = _frontmost_app_identity()
+    if identity is None:
         return None
-    name = app.localizedName()
-    pid = app.processIdentifier()
-    if not name or not pid:
+    name, pid = identity
+    return {"name": name, "pid": pid, "root": AXUIElementCreateApplication(pid)}
+
+
+def _frontmost_identity_from_info(info: dict) -> Optional[tuple[str, int]]:
+    name = info.get("name")
+    pid = info.get("pid")
+    if not isinstance(name, str) or not isinstance(pid, int):
         return None
-    return {"name": str(name), "root": AXUIElementCreateApplication(int(pid))}
+    return name, pid
 
 
-def observe_frontmost() -> str:
+@dataclass(frozen=True, slots=True)
+class UIObservation:
+    """A single successful OBSERVE snapshot.
+
+    Carries the frontmost app identity plus its live AX root so an
+    immediately-following CLICK in the SAME action turn can reuse the root
+    without a second frontmost lookup/walk. Ownership is per-turn and lives in
+    the caller (``server._run_action_loop``); this module holds no observation
+    state, so concurrent turns cannot clear or consume each other's snapshot.
+    """
+
+    name: str
+    pid: int
+    root: Any
+    text: str
+
+
+def observe_frontmost_snapshot() -> tuple[str, Optional[UIObservation]]:
+    """Observe the frontmost app's AX tree.
+
+    Returns ``(rendered_text, snapshot)``. The snapshot is non-None only on a
+    fully successful observation (permission granted, a frontmost app exists,
+    traversal produced lines). On any failure the snapshot is None and the text
+    carries the same user-facing message as the text-only wrapper.
+    """
     if not _ax_is_trusted():
-        return _permission_prompt()
+        return _permission_prompt(), None
     try:
         info = _frontmost_app()
     except Exception as e:  # noqa: BLE001
         log.warning("frontmost app lookup failed: %s", e)
-        return "Couldn't read UI from the frontmost app."
+        return "Couldn't read UI from the frontmost app.", None
     if info is None:
-        return "No frontmost app — try 'focus <app name>' first."
+        return "No frontmost app — try 'focus <app name>' first.", None
     try:
         lines = _traverse(info["root"])
     except Exception as e:  # noqa: BLE001
         log.warning("AX traversal failed for %s: %s", info["name"], e)
-        return f"Couldn't read UI from {info['name']}."
+        return f"Couldn't read UI from {info['name']}.", None
     if not lines:
-        return f"{info['name']} has no inspectable UI right now."
-    return "\n".join(lines)
+        return f"{info['name']} has no inspectable UI right now.", None
+    text = "\n".join(lines)
+    identity = _frontmost_identity_from_info(info)
+    if identity is None:
+        return text, None
+    name, pid = identity
+    return text, UIObservation(name=name, pid=pid, root=info["root"], text=text)
+
+
+def observe_frontmost() -> str:
+    """Text-only wrapper for callers that do not reuse the snapshot."""
+    return observe_frontmost_snapshot()[0]
 
 
 def _press_via_ax(element: Any) -> bool:
@@ -518,17 +569,38 @@ def _press_via_ax(element: Any) -> bool:
         return False
 
 
-def click_element(role: str, label: str) -> str:
+def _click_root(observation: Optional[UIObservation]) -> Optional[Any]:
+    """Resolve the AX root for a click.
+
+    When a same-turn observation is supplied and the frontmost app identity
+    still matches it, reuse its root without a second frontmost lookup/walk.
+    Otherwise (no observation, focus changed, or identity lookup failed) fall
+    back to a fresh frontmost lookup.
+    """
+    if observation is not None:
+        try:
+            identity = _frontmost_app_identity()
+        except Exception:  # noqa: BLE001
+            identity = None
+        if identity == (observation.name, observation.pid):
+            return observation.root
+    info = _frontmost_app()
+    return info["root"] if info is not None else None
+
+
+def click_element(
+    role: str, label: str, observation: Optional[UIObservation] = None
+) -> str:
     if not _ax_is_trusted():
         return _permission_prompt()
     try:
-        info = _frontmost_app()
+        root = _click_root(observation)
     except Exception as e:  # noqa: BLE001
         log.warning("frontmost app lookup failed: %s", e)
         return "Couldn't read UI from the frontmost app."
-    if info is None:
+    if root is None:
         return "No frontmost app — try 'focus <app name>' first."
-    target = _find_element(info["root"], role, label)
+    target = _find_element(root, role, label)
     if target is None:
         return f"Couldn't find {role} matching '{label}'."
     if _press_via_ax(target):

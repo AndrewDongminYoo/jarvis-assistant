@@ -1435,8 +1435,7 @@ Completed since this plan:
 
 1. Phase 5 — `UI:CLICK`, `UI:TYPE`, `UI:KEY`, `UI:SCROLL` (write actions) — implemented in `gui_actions.py` and routed through `server.py`.
 2. Phase 6 — `[ACTION:COMPUTER:goal]` with Anthropic Computer Use — implemented in `computer_use.py` and routed through `server.py`.
+3. OBSERVE-result reuse for one turn — `gui_actions.observe_frontmost_snapshot` returns a `UIObservation`; `server._run_action_loop` owns it as a per-turn loop-local (`ui_context`) and passes it to the next CLICK. No module-global cache, so concurrent turns stay isolated.
+4. AX traversal cooperative wall-clock budget — implemented with `TRAVERSE_BUDGET_SECONDS = 2.0` (checked between AX calls) plus the existing element and depth caps. It bounds large-but-responsive trees, not a single stalled AX call.
 
-Still open:
-
-1. OBSERVE-result caching for one turn (decide based on dogfooding latency data).
-2. 5-second traversal hard timeout (the spec mentions this as defense-in-depth; `MAX_ELEMENTS`/`MAX_DEPTH` make it unnecessary in practice, but a true wall-clock guard would protect against pathological pyobjc latency).
+No open follow-ups from this plan remain in the current implementation.

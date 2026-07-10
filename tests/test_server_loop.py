@@ -44,7 +44,7 @@ def test_action_loop_runs_one_safe_action(monkeypatch):
     fake = FakeRouter(["Checking. [ACTION:CALENDAR]"])
     monkeypatch.setattr(server, "_router", fake)
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         assert tag == "CALENDAR"  # nosec B101
         return server.ActionResult("no events today")
 
@@ -71,7 +71,7 @@ def test_action_loop_max_steps_one_stops_after_first_action(monkeypatch):
     )
     monkeypatch.setattr(server, "_router", fake)
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         return server.ActionResult("result")
 
     monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
@@ -96,7 +96,7 @@ def test_handle_message_dispatches_safe_action(monkeypatch):
     fake_router = FakeRouter(["Checking. [ACTION:CALENDAR]", "OK.", "No events today."])
     monkeypatch.setattr(server, "_router", fake_router)
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         assert tag == "CALENDAR"  # nosec B101
         return server.ActionResult("0 events")
 
@@ -129,7 +129,7 @@ def test_handle_message_emits_step_after_safe_action(monkeypatch):
     fake_router = FakeRouter(["Checking. [ACTION:CALENDAR]", "OK.", "No events today."])
     monkeypatch.setattr(server, "_router", fake_router)
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         assert tag == "CALENDAR"  # nosec B101
         return server.ActionResult("0 events")
 
@@ -266,6 +266,156 @@ def test_handle_message_confirmed_computer_emits_internal_tool_step(monkeypatch)
     }
 
 
+def test_action_loop_reuses_observe_snapshot_for_followup_click(monkeypatch):
+    import gui_actions
+
+    fake = FakeRouter(
+        [
+            "Observing. [ACTION:UI:OBSERVE]",
+            "Clicking. [ACTION:UI:CLICK:button::Open]",
+            "Done.",
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Open"}],
+    }
+    frontmost_calls = []
+
+    def fake_frontmost_app():
+        frontmost_calls.append("called")
+        if len(frontmost_calls) > 1:
+            raise AssertionError("cached click should not call _frontmost_app again")
+        return {"name": "Finder", "pid": 42, "root": root}
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", fake_frontmost_app)
+    monkeypatch.setattr(gui_actions, "_frontmost_app_identity", lambda: ("Finder", 42))
+    monkeypatch.setattr(gui_actions, "_press_via_ax", lambda _element: True)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "open it"}],
+            system="sys",
+            task="voice",
+            max_steps=5,
+        )
+    )
+
+    assert raw == "Done."  # nosec B101
+    assert pending is None  # nosec B101
+    assert [step[0] for step in steps] == [  # nosec B101
+        "UI:OBSERVE",
+        "UI:CLICK:button::Open",
+    ]
+    # Single frontmost lookup proves the follow-up CLICK reused the OBSERVE
+    # snapshot instead of walking the AX tree again.
+    assert frontmost_calls == ["called"]  # nosec B101
+
+
+def test_observe_snapshot_does_not_leak_across_action_loops(monkeypatch):
+    """The blocker fix: the OBSERVE cache is a per-loop local, so a CLICK in a
+    SEPARATE loop turn never reuses a prior turn's snapshot."""
+    import gui_actions
+
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Open"}],
+    }
+    frontmost_calls = []
+
+    def fake_frontmost_app():
+        frontmost_calls.append("called")
+        return {"name": "Finder", "pid": 42, "root": root}
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", fake_frontmost_app)
+    monkeypatch.setattr(gui_actions, "_frontmost_app_identity", lambda: ("Finder", 42))
+    monkeypatch.setattr(gui_actions, "_press_via_ax", lambda _element: True)
+
+    # Turn 1: OBSERVE only — populates that loop's local cache, which then dies.
+    monkeypatch.setattr(
+        server, "_router", FakeRouter(["Observing. [ACTION:UI:OBSERVE]", "Done."])
+    )
+    run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "look"}],
+            system="sys",
+            task="voice",
+            max_steps=5,
+        )
+    )
+    assert frontmost_calls == ["called"]  # nosec B101
+
+    # Turn 2: CLICK only — a fresh loop, so it must do its own frontmost lookup.
+    monkeypatch.setattr(
+        server,
+        "_router",
+        FakeRouter(["Clicking. [ACTION:UI:CLICK:button::Open]", "Done."]),
+    )
+    run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "open it"}],
+            system="sys",
+            task="voice",
+            max_steps=5,
+        )
+    )
+    assert frontmost_calls == ["called", "called"]  # nosec B101
+
+
+def test_intervening_action_clears_observe_snapshot(monkeypatch):
+    """OBSERVE -> FOCUS -> CLICK: the intervening FOCUS drops the snapshot, so
+    the CLICK re-fetches the frontmost app rather than reusing a stale root."""
+    import gui_actions
+
+    fake = FakeRouter(
+        [
+            "Observing. [ACTION:UI:OBSERVE]",
+            "Focusing. [ACTION:UI:FOCUS:Finder]",
+            "Clicking. [ACTION:UI:CLICK:button::Open]",
+            "Done.",
+        ]
+    )
+    monkeypatch.setattr(server, "_router", fake)
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    monkeypatch.setattr(gui_actions, "focus_app", lambda name: f"Focused {name}.")
+
+    root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Open"}],
+    }
+    frontmost_calls = []
+
+    def fake_frontmost_app():
+        frontmost_calls.append("called")
+        return {"name": "Finder", "pid": 42, "root": root}
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", fake_frontmost_app)
+    monkeypatch.setattr(gui_actions, "_frontmost_app_identity", lambda: ("Finder", 42))
+    monkeypatch.setattr(gui_actions, "_press_via_ax", lambda _element: True)
+
+    raw, steps, pending = run(
+        server._run_action_loop(
+            messages=[{"role": "user", "content": "open it"}],
+            system="sys",
+            task="voice",
+            max_steps=5,
+        )
+    )
+
+    assert [step[0] for step in steps] == [  # nosec B101
+        "UI:OBSERVE",
+        "UI:FOCUS:Finder",
+        "UI:CLICK:button::Open",
+    ]
+    # Two frontmost lookups: one for OBSERVE, one for the CLICK that could not
+    # reuse the snapshot the FOCUS cleared.
+    assert frontmost_calls == ["called", "called"]  # nosec B101
+
+
 def test_action_results_mark_validation_failures():
     results = [
         run(server._dispatch_action_result("TASK:CREATE:")),
@@ -379,7 +529,7 @@ def test_handle_message_pending_yes_executes_action(monkeypatch):
 
     called = {}
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         called["tag"] = tag
         return server.ActionResult("sent")
 
@@ -503,7 +653,7 @@ def test_action_loop_runs_two_safe_steps(monkeypatch):
     )
     monkeypatch.setattr(server, "_router", fake)
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         return server.ActionResult(f"ran {tag}")
 
     monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)
@@ -536,7 +686,7 @@ def test_action_loop_breaks_on_repeated_action(monkeypatch):
 
     calls = []
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         calls.append(tag)
         return server.ActionResult("0 events")
 
@@ -567,7 +717,7 @@ def test_action_loop_stops_at_max_steps(monkeypatch):
     )
     monkeypatch.setattr(server, "_router", fake)
 
-    async def fake_dispatch(tag):
+    async def fake_dispatch(tag, *args, **kwargs):
         return server.ActionResult(f"ran {tag}")
 
     monkeypatch.setattr(server, "_dispatch_action_result", fake_dispatch)

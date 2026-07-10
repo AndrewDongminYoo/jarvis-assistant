@@ -144,6 +144,9 @@ Rules live in `safety.py` as module-level constants. Externalizing to a
 `safety_rules.toml` file is a later option if the rules grow; not in scope
 now.
 
+Computer Use also applies an in-loop tool safety check before executing each model-requested action.
+Risky text entry, destructive key combinations, and payment or credential keywords are blocked before local mouse or keyboard execution.
+
 ### Pending Action Pattern
 
 ```python
@@ -271,12 +274,12 @@ Implemented in the current codebase:
 5. `UI:CLICK` / `UI:TYPE` / `UI:KEY` / `UI:SCROLL`.
 6. `computer_use.py` and the `[ACTION:COMPUTER:goal]` tag.
 7. Optional `step` WebSocket message and frontend progress indicator.
+8. `MAIL:SEND:recipient::body` dispatch through Apple Mail after confirmation.
+9. One-turn `UI:OBSERVE` snapshot reuse for the immediately following `UI:CLICK`, owned by a per-turn loop-local in `server._run_action_loop` (no module-global cache, so concurrent turns stay isolated).
+10. Computer Use internal tool progress, per-tool safety blocking, and selected-display screenshot/coordinate support.
 
-## Open Questions
+## Future Product Questions
 
-- Should `UI:OBSERVE` cache the last observation for one turn to save a round
-  trip when the model wants to act on what it just saw? (Defer until step 4
-  reveals whether it's needed.)
 - What is the right `MAX_STEPS` value? Start at 5; revisit after dogfooding.
 - Should the `step` message also carry latency for observability? Defer; the
   existing LLM router logging already captures per-call latency.

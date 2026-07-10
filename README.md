@@ -336,11 +336,11 @@ llm_router.py              Provider routing and fallback by task
 planner.py                 Planning module using the shared router
 memory.py                  SQLite memory and facts
 calendar_access.py         Apple Calendar access
-mail_access.py             Apple Mail access
+mail_access.py             Apple Mail read, search, and send access
 notes_access.py            Apple Notes access
 actions.py                 macOS system actions
 gui_actions.py             Accessibility-based app focus, observe, click, type, key, scroll
-computer_use.py            Anthropic Computer Use screen-driving fallback
+computer_use.py            Anthropic Computer Use fallback with tool progress
 browser.py                 Playwright browsing/search helpers
 work_mode.py               Claude Code work sessions
 frontend/src/main.ts       Frontend state machine

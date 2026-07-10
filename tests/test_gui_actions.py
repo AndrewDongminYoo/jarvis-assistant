@@ -720,6 +720,137 @@ def test_click_element_reports_failure_when_press_returns_false(monkeypatch):
     assert "Couldn't click" in result  # nosec B101
 
 
+def test_click_element_reuses_immediately_observed_frontmost_root(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    observed_root = {
+        "role": "AXWindow",
+        "title": "Mail",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    frontmost_calls = []
+
+    def fake_frontmost_app():
+        frontmost_calls.append("called")
+        if len(frontmost_calls) > 1:
+            raise AssertionError("_frontmost_app should not be called for cached click")
+        return {"name": "Mail", "pid": 100, "root": observed_root}
+
+    pressed = {}
+
+    def fake_press(element):
+        pressed["title"] = element["title"]
+        return True
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", fake_frontmost_app)
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app_identity",
+        lambda: ("Mail", 100),
+        raising=False,
+    )
+    monkeypatch.setattr(gui_actions, "_press_via_ax", fake_press)
+
+    text, snapshot = gui_actions.observe_frontmost_snapshot()
+    result = gui_actions.click_element("button", "Send", observation=snapshot)
+
+    assert 'button "Send"' in text  # nosec B101
+    assert snapshot is not None  # nosec B101
+    assert frontmost_calls == ["called"]  # nosec B101
+    assert pressed == {"title": "Send"}  # nosec B101
+    assert "Clicked" in result  # nosec B101
+
+
+def test_click_element_ignores_observed_root_when_frontmost_identity_changes(
+    monkeypatch,
+):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    observed_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Archive"}],
+    }
+    current_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    identity_checks = []
+    frontmost_calls = []
+
+    def fake_frontmost_app():
+        frontmost_calls.append("called")
+        if len(frontmost_calls) == 1:
+            return {"name": "Mail", "pid": 100, "root": observed_root}
+        if not identity_checks:
+            raise AssertionError("frontmost identity was not checked")
+        return {"name": "Slack", "pid": 200, "root": current_root}
+
+    def fake_identity():
+        identity_checks.append("checked")
+        return ("Slack", 200)
+
+    pressed = {}
+
+    def fake_press(element):
+        pressed["title"] = element["title"]
+        return True
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", fake_frontmost_app)
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app_identity",
+        fake_identity,
+        raising=False,
+    )
+    monkeypatch.setattr(gui_actions, "_press_via_ax", fake_press)
+
+    _text, snapshot = gui_actions.observe_frontmost_snapshot()
+    result = gui_actions.click_element("button", "Send", observation=snapshot)
+
+    assert identity_checks == ["checked"]  # nosec B101
+    assert frontmost_calls == ["called", "called"]  # nosec B101
+    assert pressed == {"title": "Send"}  # nosec B101
+    assert "Clicked" in result  # nosec B101
+
+
+def test_empty_observe_yields_no_snapshot_and_click_refetches(monkeypatch):
+    monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
+    empty_root = {"role": "AXGroup", "children": []}
+    fallback_root = {
+        "role": "AXWindow",
+        "children": [{"role": "AXButton", "title": "Send"}],
+    }
+    frontmost_calls = []
+
+    def fake_frontmost_app():
+        frontmost_calls.append("called")
+        if len(frontmost_calls) == 1:
+            return {"name": "Mail", "pid": 100, "root": empty_root}
+        return {"name": "Mail", "pid": 100, "root": fallback_root}
+
+    pressed = {}
+
+    def fake_press(element):
+        pressed["title"] = element["title"]
+        return True
+
+    monkeypatch.setattr(gui_actions, "_frontmost_app", fake_frontmost_app)
+    monkeypatch.setattr(
+        gui_actions,
+        "_frontmost_app_identity",
+        lambda: ("Mail", 100),
+        raising=False,
+    )
+    monkeypatch.setattr(gui_actions, "_press_via_ax", fake_press)
+
+    text, snapshot = gui_actions.observe_frontmost_snapshot()
+    result = gui_actions.click_element("button", "Send", observation=snapshot)
+
+    assert "no inspectable UI" in text  # nosec B101
+    assert snapshot is None  # nosec B101
+    assert frontmost_calls == ["called", "called"]  # nosec B101
+    assert pressed == {"title": "Send"}  # nosec B101
+    assert "Clicked" in result  # nosec B101
+
+
 def test_type_text_returns_permission_message_when_not_trusted(monkeypatch):
     monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: False)
     result = gui_actions.type_text("hello")
