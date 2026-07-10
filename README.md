@@ -238,14 +238,16 @@ frame — as the signal to re-arm wake listening.
 
 ## REST API
 
-| Method   | Path                         | Purpose                         |
-| -------- | ---------------------------- | ------------------------------- |
-| `GET`    | `/api/status`                | Service status and version      |
-| `GET`    | `/api/health`                | Liveness probe                  |
-| `GET`    | `/api/memory/facts`          | List persisted user facts       |
-| `POST`   | `/api/memory/fact`           | Add a fact: `{ "fact": "..." }` |
-| `DELETE` | `/api/memory/fact/{fact_id}` | Remove a fact by ID             |
-| `GET`    | `/api/memory/tasks`          | List planner tasks              |
+| Method   | Path                         | Purpose                                                       |
+| -------- | ---------------------------- | ------------------------------------------------------------- |
+| `GET`    | `/api/status`                | Service status and version                                    |
+| `GET`    | `/api/health`                | Liveness probe                                                |
+| `GET`    | `/api/providers`             | List available LLM providers and the preferred one            |
+| `POST`   | `/api/providers`             | Set the preferred provider: `{ "preferred": "<name>\|null" }` |
+| `GET`    | `/api/memory/facts`          | List persisted user facts                                     |
+| `POST`   | `/api/memory/fact`           | Add a fact: `{ "fact": "..." }`                               |
+| `DELETE` | `/api/memory/fact/{fact_id}` | Remove a fact by ID                                           |
+| `GET`    | `/api/memory/tasks`          | List planner tasks                                            |
 
 The built frontend is mounted at `/app` when `frontend/dist/` exists.
 

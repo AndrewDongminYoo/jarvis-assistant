@@ -47,9 +47,12 @@ def _load_provider_pref() -> None:
     """Apply a persisted provider preference on top of the env default order.
     A missing, unreadable, or unknown-provider file is ignored."""
     try:
-        name = json.loads(PROVIDER_PREF_PATH.read_text()).get("preferred")
+        payload = json.loads(PROVIDER_PREF_PATH.read_text())
     except (OSError, ValueError):
         return
+    if not isinstance(payload, dict):
+        return
+    name = payload.get("preferred")
     if isinstance(name, str) and name in _router.available_providers():
         _router.prefer(name)
 
