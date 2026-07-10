@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -21,7 +23,29 @@ log = logging.getLogger("jarvis.gui")
 
 MAX_ELEMENTS = 250
 MAX_DEPTH = 15
+# Cooperative wall-clock budget for a single OBSERVE traversal. This is a
+# COOPERATIVE cap checked between AX calls, not a hard timeout: it bounds a
+# large-but-responsive tree (many fast AX calls) but cannot interrupt a single
+# stalled `AXUIElementCopyAttributeValue`. See the design spec for the honest
+# scope of this guard.
+TRAVERSE_BUDGET_SECONDS = 2.0
+TRAVERSE_BUDGET_MARKER = "[... stopped after UI traversal budget]"
 APPLESCRIPT_TIMEOUT = 10
+
+
+@dataclass(slots=True)
+class _TraversalState:
+    budget: int
+    deadline: float
+    over_budget: bool = False
+
+    def has_time(self) -> bool:
+        if self.over_budget:
+            return False
+        if time.monotonic() <= self.deadline:
+            return True
+        self.over_budget = True
+        return False
 
 
 def _ancestor_app_name(start_pid: Optional[int] = None) -> str:
@@ -233,93 +257,129 @@ def _find_element(root: Any, role: str, label_substring: str) -> Optional[Any]:
 def _traverse(element: Any, depth: int = 0) -> list[str]:
     """Walk an AX subtree and emit pruned, indented lines.
 
-    Termination: any of (a) depth > MAX_DEPTH, (b) emitted-line budget
-    exhausted, (c) walk completes. When the budget runs out, the count of
-    additional qualifying elements is appended as a truncation marker.
+    Termination: depth, emitted-line budget, cooperative wall-clock budget, or
+    completion. The wall-clock budget is checked between AX calls (see
+    ``TRAVERSE_BUDGET_SECONDS``); it cannot interrupt a single stalled AX call.
     """
-    budget = [MAX_ELEMENTS]
-    lines = _traverse_inner(element, depth, budget)
-    if budget[0] <= 0:
-        skipped = _count_remaining(element, depth, MAX_ELEMENTS)
-        if skipped > 0:
+    state = _TraversalState(
+        budget=MAX_ELEMENTS,
+        deadline=time.monotonic() + TRAVERSE_BUDGET_SECONDS,
+    )
+    lines = _traverse_inner(element, depth, state)
+    if state.over_budget:
+        lines.append(TRAVERSE_BUDGET_MARKER)
+    elif state.budget <= 0:
+        skipped = _count_remaining(element, depth, state)
+        if state.over_budget:
+            lines.append(TRAVERSE_BUDGET_MARKER)
+        elif skipped > 0:
             lines.append(f"[... truncated, {skipped} more elements skipped]")
     return lines
 
 
-def _traverse_inner(element: Any, depth: int, budget: list[int]) -> list[str]:
-    if depth > MAX_DEPTH or budget[0] <= 0:
+def _traverse_inner(element: Any, depth: int, state: _TraversalState) -> list[str]:
+    if depth > MAX_DEPTH or state.budget <= 0 or not state.has_time():
         return []
 
     role_name, tier = _normalize_role(_get_role(element))
-    children = _get_children(element)
+    if not state.has_time():
+        return []
 
     if tier == "A":
         label = _label_for(element)
+        if not state.has_time():
+            return []
         if label is None:
-            return _walk_children(children, depth, budget)
+            children = _get_children(element)
+            if not state.has_time():
+                return []
+            return _walk_children(children, depth, state)
         value = None
         if role_name in ("text_field", "text_area"):
             raw_value = _get_attribute(element, "AXValue")
+            if not state.has_time():
+                return []
             if raw_value and raw_value.strip() and raw_value.strip() != label:
                 value = raw_value.strip()
         enabled = _is_enabled(element)
+        if not state.has_time():
+            return []
         line = _format_element(role_name, label, value, enabled, depth)
-        budget[0] -= 1
-        return [line] + _walk_children(children, depth + 1, budget)
+        state.budget -= 1
+        if state.budget <= 0 or not state.has_time():
+            return [line]
+        children = _get_children(element)
+        if not state.has_time():
+            return [line]
+        return [line] + _walk_children(children, depth + 1, state)
 
     if tier == "B":
-        # Reserve a budget slot for self BEFORE recursing children so the
-        # combined emit (parent + descendants) never exceeds MAX_ELEMENTS.
-        # If no descendant emits, refund the reservation and elide self.
-        budget[0] -= 1
-        child_lines = _walk_children(children, depth + 1, budget)
+        state.budget -= 1
+        label = _label_for(element)
+        if not state.has_time():
+            return []
+        enabled = _is_enabled(element)
+        if not state.has_time():
+            return []
+        self_line = _format_element(role_name, label, None, enabled, depth)
+        children = _get_children(element)
+        if not state.has_time():
+            return []
+        child_lines = _walk_children(children, depth + 1, state)
         if child_lines:
-            label = _label_for(element)
-            enabled = _is_enabled(element)
-            self_line = _format_element(role_name, label, None, enabled, depth)
             return [self_line] + child_lines
-        budget[0] += 1
+        state.budget += 1
         return []
 
-    # Ignored role — pass through children at same depth.
-    return _walk_children(children, depth, budget)
+    children = _get_children(element)
+    if not state.has_time():
+        return []
+    return _walk_children(children, depth, state)
 
 
-def _walk_children(children: list, depth: int, budget: list[int]) -> list[str]:
+def _walk_children(children: list, depth: int, state: _TraversalState) -> list[str]:
     out: list[str] = []
     for child in children:
-        if budget[0] <= 0:
+        if state.budget <= 0 or not state.has_time():
             break
-        out.extend(_traverse_inner(child, depth, budget))
+        out.extend(_traverse_inner(child, depth, state))
+        if state.over_budget:
+            break
     return out
 
 
-def _count_remaining(element: Any, depth: int, emitted_so_far: int) -> int:
+def _count_remaining(element: Any, depth: int, state: _TraversalState) -> int:
     """Count emittable elements in the full tree, return excess past budget.
 
     Second pass: how many lines would have emitted if MAX_ELEMENTS were
     unlimited. The number returned is the excess only (full count minus the
     budget already spent).
     """
-    total = _count_inner(element, depth)
-    return max(total - emitted_so_far, 0)
+    total = _count_inner(element, depth, state)
+    return max(total - MAX_ELEMENTS, 0)
 
 
-def _count_inner(element: Any, depth: int) -> int:
+def _count_inner(element: Any, depth: int, state: _TraversalState) -> int:
     """Mirror of _traverse_inner's tier handling, but counting only."""
-    if depth > MAX_DEPTH:
+    if depth > MAX_DEPTH or not state.has_time():
         return 0
     _role_name, tier = _normalize_role(_get_role(element))
+    if not state.has_time():
+        return 0
     children = _get_children(element)
+    if not state.has_time():
+        return 0
     if tier == "A":
         label = _label_for(element)
+        if not state.has_time():
+            return 0
         if label is None:
-            return sum(_count_inner(c, depth) for c in children)
-        return 1 + sum(_count_inner(c, depth + 1) for c in children)
+            return sum(_count_inner(c, depth, state) for c in children)
+        return 1 + sum(_count_inner(c, depth + 1, state) for c in children)
     if tier == "B":
-        child_count = sum(_count_inner(c, depth + 1) for c in children)
+        child_count = sum(_count_inner(c, depth + 1, state) for c in children)
         return (1 + child_count) if child_count > 0 else 0
-    return sum(_count_inner(c, depth) for c in children)
+    return sum(_count_inner(c, depth, state) for c in children)
 
 
 def _ax_is_trusted() -> bool:

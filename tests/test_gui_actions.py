@@ -309,6 +309,39 @@ def test_traverse_tier_b_refunds_budget_when_no_descendant_emits():
     assert lines == ['button "Send"'], lines  # nosec B101
 
 
+def test_traverse_stops_on_wall_clock_budget_with_marker(monkeypatch):
+    import time
+
+    expired = {"value": False}
+    original_get_children = gui_actions._get_children
+
+    def fake_monotonic():
+        return 2.0 if expired["value"] else 0.0
+
+    def fake_get_children(element):
+        children = original_get_children(element)
+        if element.get("title") == "First":
+            expired["value"] = True
+        return children
+
+    monkeypatch.setattr(gui_actions, "TRAVERSE_BUDGET_SECONDS", 1.0, raising=False)
+    monkeypatch.setattr(time, "monotonic", fake_monotonic)
+    monkeypatch.setattr(gui_actions, "_get_children", fake_get_children)
+
+    tree = {
+        "role": "AXGroup",
+        "children": [
+            {"role": "AXButton", "title": "First"},
+            {"role": "AXButton", "title": "Second"},
+        ],
+    }
+    lines = gui_actions._traverse(tree)
+
+    assert lines[0] == 'button "First"'  # nosec B101
+    assert lines[-1] == "[... stopped after UI traversal budget]"  # nosec B101
+    assert 'button "Second"' not in lines  # nosec B101
+
+
 def test_is_accessibility_permitted_returns_true_when_trusted(monkeypatch):
     monkeypatch.setattr(gui_actions, "_ax_is_trusted", lambda: True)
     assert gui_actions.is_accessibility_permitted() is True  # nosec B101
