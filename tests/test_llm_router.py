@@ -426,6 +426,29 @@ def test_prefer_does_not_mutate_base_routes():
     ]  # nosec B101
 
 
+def test_prefer_rejects_cli_fallback_provider_name():
+    from llm_router import LLMRouter
+
+    a = FakeProvider("anthropic")
+    cli = FakeProvider("some-cli")
+    cli.is_cli_fallback = True
+    router = LLMRouter(
+        routes={
+            "voice": [a, cli],
+            "work": [a, cli],
+            "plan": [a, cli],
+            "narrate": [a, cli],
+        }
+    )
+    router.prefer("some-cli")
+    assert router.preferred is None  # nosec B101
+    # CLI provider was not moved to front; base order preserved
+    assert [p.name for p in router.routes["voice"]] == [
+        "anthropic",
+        "some-cli",
+    ]  # nosec B101
+
+
 def test_available_providers_unions_tasks_excludes_cli_stable_order():
     from llm_router import LLMRouter
 
