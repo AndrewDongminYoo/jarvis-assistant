@@ -2,6 +2,10 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Complete.
+
+**Verification:** Backend tests, frontend build, provider persistence across a certless restart, TLS proxying with a complete certificate pair, and HTTP fallback with an incomplete pair were verified on 2026-07-16. System Chrome driven through the repository's Playwright dependency verified provider availability, disabled unavailable options, failed-save rollback, successful selection and close/reopen persistence, modal keyboard and focus behavior, and desktop/mobile layout without horizontal overflow. The browser run used an isolated runtime, and the repository's existing preference file remained byte-identical.
+
 **Goal:** Let the user pick one global preferred LLM provider from the web settings panel; the choice moves that provider to the front of every task's fallback order at runtime and persists across restarts.
 
 **Architecture:** `LLMRouter` keeps the env-built order as an immutable base and reorders a working copy via `prefer()`. `server.py` exposes `GET`/`POST /api/providers` and persists the choice to `data/provider_pref.json`, re-applied at startup after `from_env()`. `settings.ts` adds a `<select>` that reads/writes that endpoint. Env order stays the default/floor; the UI is a runtime override on top.
@@ -39,7 +43,7 @@
   - `LLMRouter.available_providers() -> list[str]` — key-backed API provider names, union across tasks, in stable order `["anthropic", "openai", "gemini"]`, excluding CLI providers.
   - `LLMRouter.prefer(name: str | None) -> None` — reorder `self.routes` from `_base_routes`, moving `name` to the front of each task; unknown/None restores base and sets `preferred = None`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_llm_router.py` (the module already has `FakeProvider`, `run`, `pytest`, and imports `LLMRouter`):
 
@@ -112,12 +116,12 @@ def test_available_providers_unions_tasks_excludes_cli_stable_order():
     assert router.available_providers() == ["anthropic", "openai"]  # nosec B101
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_llm_router.py -k "prefer or available_providers" -q`
 Expected: FAIL — `AttributeError: 'LLMRouter' object has no attribute 'prefer'` (and `available_providers`).
 
-- [ ] **Step 3: Implement base order + methods + helper**
+- [x] **Step 3: Implement base order + methods + helper**
 
 In `llm_router.py`, replace the `LLMRouter.__init__` body so both construction paths record a base copy and initialize `preferred`:
 
@@ -193,17 +197,17 @@ def _move_to_front(
     return front + rest
 ```
 
-- [ ] **Step 4: Run the tests to verify they pass**
+- [x] **Step 4: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_llm_router.py -q`
 Expected: PASS (all existing router tests plus the five new ones).
 
-- [ ] **Step 5: Compile check**
+- [x] **Step 5: Compile check**
 
 Run: `uv run python -m compileall -q llm_router.py`
 Expected: no output (success).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add llm_router.py tests/test_llm_router.py
@@ -230,7 +234,7 @@ git commit -m "feat(router): add global provider preference reordering"
   - `GET /api/providers` → `{"available": list[str], "preferred": str | None}`
   - `POST /api/providers` body `{"preferred": str | None}` → same shape on success; `HTTPException(400)` on an unknown/unavailable name.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Add to `tests/test_server.py` (it already has `run`, imports `server`, and imports `pytest` is NOT present — add `import pytest` and `from fastapi import HTTPException` at the top of the file if missing):
 
@@ -312,12 +316,12 @@ def test_load_provider_pref_ignores_missing_or_corrupt(monkeypatch, tmp_path):
     assert router.preferred is None  # nosec B101
 ```
 
-- [ ] **Step 2: Run the tests to verify they fail**
+- [x] **Step 2: Run the tests to verify they fail**
 
 Run: `uv run pytest tests/test_server.py -k "provider" -q`
 Expected: FAIL — `AttributeError: module 'server' has no attribute 'api_providers'`.
 
-- [ ] **Step 3: Add imports**
+- [x] **Step 3: Add imports**
 
 In `server.py`, add `import json` to the stdlib import block (after `import httpx` region — put `import json` with the stdlib imports near the top, e.g. after `import base64`), and add `HTTPException` to the FastAPI import:
 
@@ -325,7 +329,7 @@ In `server.py`, add `import json` to the stdlib import block (after `import http
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 ```
 
-- [ ] **Step 4: Add persistence helpers right after the router is built**
+- [x] **Step 4: Add persistence helpers right after the router is built**
 
 In `server.py`, immediately after the line `_router = LLMRouter.from_env()`, insert:
 
@@ -352,7 +356,7 @@ def _save_provider_pref(name: str | None) -> None:
 _load_provider_pref()
 ```
 
-- [ ] **Step 5: Add the two endpoints**
+- [x] **Step 5: Add the two endpoints**
 
 In `server.py`, in the REST API section (after `api_status` / `api_health`), add:
 
@@ -378,12 +382,12 @@ async def api_set_provider(body: dict):
     }
 ```
 
-- [ ] **Step 6: Run the tests to verify they pass**
+- [x] **Step 6: Run the tests to verify they pass**
 
 Run: `uv run pytest tests/test_server.py -k "provider" -q`
 Expected: PASS (six new tests).
 
-- [ ] **Step 7: Gitignore the persistence file**
+- [x] **Step 7: Gitignore the persistence file**
 
 Add to `.gitignore`, next to the existing `data/` entries (e.g. after `data/active_session.json`):
 
@@ -393,7 +397,7 @@ data/provider_pref.json
 
 Verify: `git check-ignore data/provider_pref.json` prints the path.
 
-- [ ] **Step 8: Update the README**
+- [x] **Step 8: Update the README**
 
 In `README.md`, in the "LLM Routing" section, after the provider-order table (the "Default provider order per task" block), add:
 
@@ -417,14 +421,14 @@ config, so do not expose the server (see the `HOST` warning above) with these
 endpoints reachable.
 ```
 
-- [ ] **Step 9: Full regression + compile**
+- [x] **Step 9: Full regression + compile**
 
 Run: `uv run pytest tests/test_server.py tests/test_llm_router.py -q`
 Expected: PASS.
 Run: `uv run python -m compileall -q server.py`
 Expected: no output.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add server.py tests/test_server.py .gitignore README.md
@@ -444,7 +448,7 @@ git commit -m "feat(server): expose GET/POST /api/providers with persistence"
 - Consumes: `GET /api/providers` → `{ available: string[]; preferred: string | null }`, `POST /api/providers` body `{ preferred: string | null }` from Task 2.
 - Produces: a `<select id="s-llm-provider">` in the settings panel; no exported API change.
 
-- [ ] **Step 1: Add the provider group + load/save logic**
+- [x] **Step 1: Add the provider group + load/save logic**
 
 In `frontend/src/settings.ts`, after the block that appends `languageGroup` to `formWrap` (the line `formWrap.appendChild(languageGroup);`) and before `panel.appendChild(formWrap);`, insert:
 
@@ -515,7 +519,7 @@ providerSelect.addEventListener("change", () => {
 });
 ```
 
-- [ ] **Step 2: Load availability when the panel opens**
+- [x] **Step 2: Load availability when the panel opens**
 
 In `frontend/src/settings.ts`, change the settings button handler from:
 
@@ -532,20 +536,23 @@ btn.addEventListener("click", () => {
 });
 ```
 
-- [ ] **Step 3: Typecheck + build the frontend**
+- [x] **Step 3: Typecheck + build the frontend**
 
 Run: `cd frontend && pnpm build`
 Expected: `tsc` passes with no type errors and `vite build` completes.
 
-- [ ] **Step 4: Manual verification**
+- [x] **Step 4: Manual verification**
 
 Start the app (`scripts/start.sh`), open `http://localhost:5173` in Chrome, open the settings panel:
 
 - The "Preferred LLM" dropdown shows "Auto (default order)" plus the three providers; providers without an API key are greyed out (disabled).
 - Selecting an available provider issues `POST /api/providers`; reopening the panel shows it still selected (persisted).
 - Confirm `data/provider_pref.json` was written with the chosen name.
+- Simulate a failed preference POST; the selector returns to the last server-confirmed value and becomes enabled again.
+- Confirm the panel exposes labelled modal-dialog semantics, traps forward and backward Tab navigation, closes with Escape, and restores focus to the settings button.
+- Run browser verification from an isolated working directory when preserving an existing repository preference file matters.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add frontend/src/settings.ts

@@ -103,16 +103,15 @@ router falls back to the next configured provider.
 
 #### Preferred provider (runtime override)
 
-The per-task order above is the default. From the web settings panel
-("Preferred LLM") the user can move one provider to the front of every
-task's order at runtime. The choice is stored in `data/provider_pref.json`
-and re-applied at startup on top of the env defaults; "Auto" clears it.
+The per-task order above is the default.
+From the web settings panel ("Preferred LLM"), the user can move one provider to the front of every task's order at runtime.
+The choice is stored in `data/provider_pref.json` and re-applied at startup on top of the env defaults; "Auto" clears it.
+The server passes this same preference-loaded router to planner clarification and final-plan calls, so `PLAN` and `PLAN_ANSWER` follow the selected provider order.
+If saving a new preference fails, the selector restores the last server-confirmed value instead of displaying an unpersisted choice.
+The settings panel is exposed as a modal dialog: keyboard focus stays inside while it is open, and Close or Escape restores focus to the settings button.
 
-- `GET /api/providers` → `{ "available": [<provider>, …], "preferred": <provider|null> }`
-  (`available` = providers whose API key is present at startup).
-- `POST /api/providers` with `{ "preferred": <provider|null> }` reorders the
-  live router and persists the choice; an unknown or unavailable name returns
-  `400`.
+- `GET /api/providers` → `{ "available": [<provider>, …], "preferred": <provider|null> }` (`available` = providers whose API key is present at startup).
+- `POST /api/providers` with `{ "preferred": <provider|null> }` reorders the live router and persists the choice; an unknown or unavailable name returns `400`.
 
 Like the rest of `/api/*`, these endpoints are unauthenticated and are only
 safe under the default loopback bind. `POST /api/providers` mutates routing
@@ -312,8 +311,9 @@ Backend only:
 python server.py
 ```
 
-The backend listens on `PORT` (default `8340`). If `cert.pem` and `key.pem`
-exist in the project root, it serves HTTPS; otherwise plain HTTP.
+The backend listens on `PORT` (default `8340`).
+If `cert.pem` and `key.pem` exist in the project root, it serves HTTPS; otherwise it serves plain HTTP.
+The Vite development proxy uses the same certificate-pair check, so `/api` and `/ws/voice` target HTTPS only when the backend does.
 
 Frontend only:
 

@@ -11,11 +11,13 @@
 - Build (also typechecks): `pnpm build` (= `tsc && vite build`). Dev server: `pnpm dev` (port 5173).
 - Frontend unit tests = compile+run one pair manually (no runner):
   `pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/out src/wake.ts test/wake.test.ts && node /tmp/out/test/wake.test.js`
-  (same pattern for `session`).
+  (same pattern for `session` and `settings`).
 
 ## Run whole app
 
-- `scripts/start.sh` — activates `.venv`, runs `python server.py` + `pnpm dev`, opens on http://localhost:5173 (Chrome). Backend `PORT` default `8340`, serves built frontend at `/app` when `frontend/dist/` exists; dev proxies `/ws/voice` + `/api` to `https://localhost:8340`.
+- `scripts/start.sh` — activates `.venv`, runs `python server.py` + `pnpm dev`, and opens `http://localhost:5173` in Chrome.
+  Backend `PORT` defaults to `8340` and serves the built frontend at `/app` when `frontend/dist/` exists.
+  The dev proxy uses HTTPS only when both root `cert.pem` and `key.pem` exist, and HTTP otherwise.
 
 ## Lint (repo-wide)
 

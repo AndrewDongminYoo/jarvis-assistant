@@ -62,6 +62,8 @@ pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --tar
 node /tmp/jarvis-wake-tests/test/wake.test.js
 pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-session-tests src/session.ts test/session.test.ts
 node /tmp/jarvis-session-tests/test/session.test.js
+pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir /tmp/jarvis-settings-tests src/settings.ts test/settings.test.ts
+node /tmp/jarvis-settings-tests/test/settings.test.js
 ```
 
 Frontend tests are plain `node` scripts compiled by `tsc` — there is no Jest/Vitest runner. Each `test/*.test.ts` file is self-executing; run a single one by compiling+executing only that pair.
@@ -78,7 +80,9 @@ Run locally:
 scripts/start.sh
 ```
 
-Then open `http://localhost:5173` in Chrome. The backend listens on `PORT` (default `8340`) and serves the built frontend from `/app` when `frontend/dist/` exists. In dev, Vite serves `5173` and proxies `/ws/voice` plus `/api` to the HTTPS backend at `https://localhost:8340`.
+Then open `http://localhost:5173` in Chrome.
+The backend listens on `PORT` (default `8340`) and serves the built frontend from `/app` when `frontend/dist/` exists.
+In development, Vite serves port `5173` and proxies `/ws/voice` plus `/api` to the backend scheme selected by the root `cert.pem` and `key.pem` pair: HTTPS when both files exist, otherwise HTTP.
 
 ## Cross-File Architecture
 

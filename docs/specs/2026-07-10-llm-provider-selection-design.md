@@ -1,6 +1,6 @@
 # LLM Provider Selection (Web UI) — Design
 
-Status: Approved, not yet implemented
+Status: Implemented
 Date: 2026-07-10
 Owner: Dongmin
 Parent spec: `docs/specs/2026-05-11-general-agent-design.md`
@@ -59,13 +59,15 @@ Why reordering instances is safe: each task route already holds provider instanc
   - a name in `available` → `_router.prefer(name)`, persist, return the new state.
   - anything else → `400` with a short message; router and file are untouched.
 - Both inherit the existing `/api/*` posture: no authentication, safe only under the loopback (`127.0.0.1`) bind. `POST` mutates routing config, so it is only safe locally.
+- Planner clarification and final-plan calls receive the server-owned `_router`, so `PLAN` and `PLAN_ANSWER` use the same runtime preference. `planner.py` keeps its module router only as the default for direct callers.
 
 ### Frontend (`frontend/src/settings.ts`)
 
 - Add a "Preferred LLM" group below the language dropdown, matching the existing `<select>` styling and the no-`innerHTML` DOM convention.
 - On panel open, `GET /api/providers`; build options: `Auto (default order)` (value empty → `preferred: null`) plus one option per known provider. Providers not in `available` render as `disabled`.
 - Set the current value from `preferred`. On `change`, `POST /api/providers` with the chosen value. This is the frontend's first use of `fetch` against `/api`.
-- Failures (offline, non-200) are swallowed with a console warning; the selector is a convenience, not a critical path.
+- While a preference save is pending, disable the selector. On an offline or non-200 result, log a console warning, restore the last server-confirmed value, and re-enable the selector; the selector is a convenience, not a critical path.
+- Expose the settings panel as a labelled modal dialog. Move focus into it on open, contain Tab and Shift+Tab navigation, close it with Escape, and restore focus to the settings button after Close or Escape.
 
 ## Data Flow
 
@@ -76,7 +78,7 @@ User picks "GPT" → POST /api/providers {preferred:"openai"}
    → _router.prefer("openai")  (openai instance to front of every task route)
    → write data/provider_pref.json
    → 200 {available, preferred:"openai"}
-Next turn → _router.complete(task) walks the reordered route → openai first
+Next turn or planner follow-up → the server-owned router walks the reordered task route → openai first
 Server restart → from_env() (env floor) → _load_provider_pref() re-applies "openai"
 ```
 
@@ -85,19 +87,21 @@ Server restart → from_env() (env floor) → _load_provider_pref() re-applies "
 - Invalid POST value → `400`, no state change.
 - Preferring an available provider that later fails at request time → the existing router fallback handles it (next provider, then CLI on quota error). Preference only changes order, not the fallback guarantees.
 - Corrupt/missing pref file at startup → ignored, env default order stands.
-- Frontend fetch error → console warning, panel still usable for other settings.
+- Frontend GET failure leaves the selector disabled. Frontend POST failure logs a warning, restores the last server-confirmed preference, and re-enables the selector.
 
 ## Testing
 
-Backend (pytest, `tests/test_llm_router.py`, `tests/test_server.py`):
+Backend (pytest, `tests/test_llm_router.py`, `tests/test_server.py`, `tests/test_server_tls.py`, `tests/test_provider_preference.py`):
 
 - `prefer("openai")` moves openai to the front of every task route and preserves the relative order of the rest and the CLI tier.
 - `prefer(None)` and `prefer("absent-name")` restore/keep the exact base order.
 - `available_providers()` returns only key-backed API providers, excluding CLI, in stable order.
 - `GET /api/providers` returns available + preferred; `POST` with a valid name reorders and persists; `POST` with an invalid name returns 400 and leaves state unchanged; `POST {preferred:null}` clears.
 - Startup load applies a persisted preference; a missing/corrupt file is ignored.
+- `PLAN` clarification and `PLAN_ANSWER` final-plan dispatch use the server-owned preference-loaded router rather than an independent planner router.
+- Server startup enables TLS only when both `cert.pem` and `key.pem` exist; neither file or either partial-pair state falls back to HTTP.
 
-Frontend: logic is thin (fetch + build `<select>` + fetch on change) and has no pure unit like `wake.ts`; verify by driving the panel manually (`pnpm build` for typecheck).
+Frontend: `frontend/test/settings.test.ts` verifies successful saves plus HTTP and network failure reconciliation. System Chrome driven through Playwright verified the available/disabled option states, failed-save rollback, successful provider selection, close/reopen persistence, modal keyboard and focus behavior, and desktop/mobile layout on 2026-07-16. The browser run used an isolated runtime so the repository's existing `data/provider_pref.json` remained byte-identical.
 
 ## Security & Observability Notes
 
