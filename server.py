@@ -38,6 +38,13 @@ PORT = int(os.getenv("PORT", "8340"))
 SSL_CERT = Path("cert.pem")
 SSL_KEY = Path("key.pem")
 
+
+def _ssl_file_args() -> tuple[str | None, str | None]:
+    if not (SSL_CERT.exists() and SSL_KEY.exists()):
+        return None, None
+    return str(SSL_CERT), str(SSL_KEY)
+
+
 _router = LLMRouter.from_env()
 
 PROVIDER_PREF_PATH = Path("data/provider_pref.json")
@@ -1004,11 +1011,12 @@ if __name__ == "__main__":
 
     print("JARVIS server · Built from CLAUDE.md by Taoufik — instagram.com/taoufik.ai")
     start_background_refresh()
+    ssl_certfile, ssl_keyfile = _ssl_file_args()
     uvicorn.run(
         app,
         host=os.getenv("HOST", "127.0.0.1"),
         port=PORT,
-        ssl_certfile=str(SSL_CERT) if SSL_CERT.exists() else None,
-        ssl_keyfile=str(SSL_KEY) if SSL_KEY.exists() else None,
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
         log_level="info",
     )
