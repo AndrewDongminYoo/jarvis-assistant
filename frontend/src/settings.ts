@@ -1,10 +1,40 @@
 // settings.ts — Settings panel built with safe DOM methods (no innerHTML)
+type ProviderPreferenceSaveResult =
+  | { readonly ok: true; readonly preferred: string }
+  | { readonly ok: false; readonly preferred: string };
+
+export async function saveProviderPreference(
+  requested: string,
+  confirmed: string,
+  request: typeof fetch = fetch,
+): Promise<ProviderPreferenceSaveResult> {
+  try {
+    const response = await request("/api/providers", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ preferred: requested || null }),
+    });
+    return response.ok
+      ? { ok: true, preferred: requested }
+      : { ok: false, preferred: confirmed };
+  } catch {
+    return { ok: false, preferred: confirmed };
+  }
+}
+
 export function initSettings(): void {
   const panel = document.getElementById("settings-panel")!;
   const btn = document.getElementById("settings-btn")!;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-labelledby", "settings-title");
+  btn.setAttribute("aria-haspopup", "dialog");
+  btn.setAttribute("aria-controls", "settings-panel");
+  btn.setAttribute("aria-expanded", "false");
 
   // Heading
   const h2 = document.createElement("h2");
+  h2.id = "settings-title";
   h2.style.cssText =
     "font-size:1rem;letter-spacing:.2em;text-transform:uppercase;color:#888;";
   h2.textContent = "Settings";
@@ -86,6 +116,7 @@ export function initSettings(): void {
   providerGroup.appendChild(providerLabel);
   providerGroup.appendChild(providerSelect);
   formWrap.appendChild(providerGroup);
+  let confirmedProvider = "";
 
   async function loadProviders(): Promise<void> {
     try {
@@ -99,6 +130,7 @@ export function initSettings(): void {
         opt.disabled = opt.value !== "" && !data.available.includes(opt.value);
       });
       providerSelect.value = data.preferred ?? "";
+      confirmedProvider = providerSelect.value;
       providerSelect.disabled = false;
     } catch {
       // settings are a convenience; ignore fetch failures
@@ -106,12 +138,15 @@ export function initSettings(): void {
   }
 
   providerSelect.addEventListener("change", () => {
-    void fetch("/api/providers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ preferred: providerSelect.value || null }),
-    }).catch(() => {
-      /* ignore — non-critical */
+    const requested = providerSelect.value;
+    providerSelect.disabled = true;
+    void saveProviderPreference(requested, confirmedProvider).then((result) => {
+      confirmedProvider = result.preferred;
+      providerSelect.value = result.preferred;
+      providerSelect.disabled = false;
+      if (!result.ok) {
+        console.warn("Failed to save preferred LLM provider.");
+      }
     });
   });
 
@@ -122,12 +157,53 @@ export function initSettings(): void {
   closeBtn.textContent = "Close";
   panel.appendChild(closeBtn);
 
-  btn.addEventListener("click", () => {
+  let restoreFocusTo: HTMLElement | null = null;
+
+  function closePanel(): void {
+    panel.classList.add("hidden");
+    btn.setAttribute("aria-expanded", "false");
+    const focusTarget = restoreFocusTo ?? btn;
+    restoreFocusTo = null;
+    focusTarget.focus();
+  }
+
+  function openPanel(): void {
+    restoreFocusTo =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : btn;
     panel.classList.remove("hidden");
+    btn.setAttribute("aria-expanded", "true");
     void loadProviders();
-  });
-  closeBtn.addEventListener("click", () => panel.classList.add("hidden"));
+    languageSelect.focus();
+  }
+
+  btn.addEventListener("click", openPanel);
+  closeBtn.addEventListener("click", closePanel);
   panel.addEventListener("click", (e) => {
-    if (e.target === panel) panel.classList.add("hidden");
+    if (e.target === panel) closePanel();
+  });
+  panel.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closePanel();
+      return;
+    }
+    if (e.key !== "Tab") return;
+
+    const focusable = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), select:not([disabled])",
+      ),
+    );
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last?.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first?.focus();
+    }
   });
 }
