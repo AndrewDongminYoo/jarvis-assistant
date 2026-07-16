@@ -11,8 +11,13 @@ SYSTEM = (
 )
 
 
-async def get_clarifying_questions(task: str) -> str:
-    return await _router.complete(
+async def get_clarifying_questions(
+    task: str,
+    *,
+    router: LLMRouter | None = None,
+) -> str:
+    active_router = _router if router is None else router
+    return await active_router.complete(
         task="plan",
         max_tokens=300,
         system=SYSTEM,
@@ -25,8 +30,14 @@ async def get_clarifying_questions(task: str) -> str:
     )
 
 
-async def generate_plan(task: str, answers: str) -> str:
-    return await _router.complete(
+async def generate_plan(
+    task: str,
+    answers: str,
+    *,
+    router: LLMRouter | None = None,
+) -> str:
+    active_router = _router if router is None else router
+    return await active_router.complete(
         task="plan",
         max_tokens=500,
         system=SYSTEM,

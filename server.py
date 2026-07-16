@@ -408,7 +408,9 @@ async def _dispatch_action_result(
     if kind == "PLAN":
         from planner import get_clarifying_questions
 
-        return ActionResult(await get_clarifying_questions(":".join(parts[1:])))
+        return ActionResult(
+            await get_clarifying_questions(":".join(parts[1:]), router=_router)
+        )
 
     if kind == "PLAN_ANSWER":
         from planner import generate_plan
@@ -420,7 +422,9 @@ async def _dispatch_action_result(
                 "Plan answer needs both task and answers separated by '::'.",
                 status="failed",
             )
-        return ActionResult(await generate_plan(task.strip(), answers.strip()))
+        return ActionResult(
+            await generate_plan(task.strip(), answers.strip(), router=_router)
+        )
 
     if kind == "REMEMBER":
         fact = ":".join(parts[1:])
