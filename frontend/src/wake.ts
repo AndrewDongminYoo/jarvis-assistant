@@ -1,7 +1,5 @@
 export type WakeCommand =
-  | { kind: "ignore" }
-  | { kind: "arm" }
-  | { kind: "command"; command: string };
+  { kind: "ignore" } | { kind: "arm" } | { kind: "command"; command: string };
 
 const WAKE_PATTERNS = [
   /^\s*(?:hey[\s,.:;!?-]+)?jarvis\b[\s,.:;!?-]*/i,

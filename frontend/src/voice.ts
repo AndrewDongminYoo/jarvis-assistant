@@ -107,11 +107,9 @@ export function startListening(): void {
   type W = Record<string, unknown>;
   const SR =
     ((window as unknown as W)["SpeechRecognition"] as
-      | SRConstructor
-      | undefined) ??
+      SRConstructor | undefined) ??
     ((window as unknown as W)["webkitSpeechRecognition"] as
-      | SRConstructor
-      | undefined);
+      SRConstructor | undefined);
 
   if (!SR) {
     console.error("Web Speech API requires Chrome");

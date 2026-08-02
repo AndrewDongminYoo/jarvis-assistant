@@ -386,8 +386,6 @@ def test_prefer_moves_provider_to_front_of_every_task():
 
 
 def test_prefer_none_restores_base_order():
-    from llm_router import LLMRouter
-
     a, o = FakeProvider("anthropic"), FakeProvider("openai")
     router = _four_task_router([a, o])
     router.prefer("openai")
@@ -400,8 +398,6 @@ def test_prefer_none_restores_base_order():
 
 
 def test_prefer_absent_name_keeps_base_order_and_clears_preferred():
-    from llm_router import LLMRouter
-
     a, o = FakeProvider("anthropic"), FakeProvider("openai")
     router = _four_task_router([a, o])
     router.prefer("gemini")  # not present in any route
@@ -413,8 +409,6 @@ def test_prefer_absent_name_keeps_base_order_and_clears_preferred():
 
 
 def test_prefer_does_not_mutate_base_routes():
-    from llm_router import LLMRouter
-
     a, o = FakeProvider("anthropic"), FakeProvider("openai")
     router = _four_task_router([a, o])
     router.prefer("openai")
