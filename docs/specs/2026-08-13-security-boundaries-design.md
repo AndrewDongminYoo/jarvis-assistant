@@ -36,7 +36,7 @@ This change hardens the existing local-only boundary without adding accounts, re
 The server validates the request before calling `WebSocket.accept()`.
 
 A request host is trusted only when its parsed hostname is `localhost`, `127.0.0.1`, or `::1`.
-The host may include the backend port.
+The host may omit a port or include either the fixed Vite development port `5173` or the configured backend `PORT`.
 Malformed hosts and all non-loopback names or addresses are rejected.
 
 An absent `Origin` is accepted for local non-browser clients after the host check passes.
@@ -55,6 +55,7 @@ Affirmative words embedded in longer speech do not authorize execution.
 
 Negative detection remains fail-safe and runs before affirmative detection.
 Explicit negative words or phrases such as `no`, `cancel`, `stop`, `abort`, `don't`, `don’t`, `do not`, `아니요`, `취소`, `그만`, and `하지 마` cancel the pending action even when the utterance also contains an affirmative token.
+Common Korean endings in phrases such as `취소해줘`, `하지 마세요`, and `아니에요` remain cancellations, while the completed-pattern boundary prevents unrelated words such as `취소선` and `아니메이션` from cancelling.
 
 If a reply is neither negative nor an exact affirmative, the server restores the same unexpired pending action and asks for an explicit yes or no.
 The original expiration timestamp is retained, so ambiguous replies cannot extend the confirmation window indefinitely.
@@ -89,7 +90,7 @@ The same matching helper is used by `classify()` and `reason()` so the decision 
 
 - Pure tests cover valid and invalid hosts and origins, including IPv4, IPv6, missing origin, opaque origin, foreign origin, and disallowed ports.
 - FastAPI WebSocket integration tests prove that an untrusted origin is rejected and a trusted local origin completes a `ping`/`pong` exchange.
-- Safety tests reproduce the unrelated-sentence and negated-sentence approval defects before implementation.
+- Safety tests reproduce the unrelated-sentence, negated-sentence, and Korean cancellation-suffix defects before implementation while protecting unrelated Korean words from substring matches.
 - Safety tests cover Korean risky UI labels and Korean suffixed Computer Use keywords.
 - Server-loop tests prove that ambiguous replies do not dispatch and retain the original pending action.
 - WebSocket lifecycle tests prove generated connection IDs are passed to handlers and pending state is removed on disconnect.

@@ -36,8 +36,8 @@ If behavior changes, update `README.md` in the same change. Do not make
 - Do not log user transcripts, prompt bodies, API keys, or full model responses.
 - LLM logs should include task/provider/model, success or failure, latency, and
   response length only.
-- Preserve the `/ws/voice` pre-accept boundary: the request host must be loopback, and a present browser origin must be loopback on port `5173` or the configured backend `PORT`.
-- Keep confirmation replies fail-closed: only complete short affirmative phrases execute, explicit negatives cancel first, ambiguous replies retain the original pending expiration instead of entering normal turn handling, and disconnect cleanup removes connection-owned pending state.
+- Preserve the `/ws/voice` pre-accept boundary: the request host must be loopback with no explicit port, port `5173`, or the configured backend `PORT`, and a present browser origin must be loopback on port `5173` or the configured backend `PORT`.
+- Keep confirmation replies fail-closed: only complete short affirmative phrases execute, explicit negatives and their supported Korean polite endings cancel first without matching unrelated words, ambiguous replies retain the original pending expiration instead of entering normal turn handling, and disconnect cleanup removes connection-owned pending state.
 
 ## Development Commands
 

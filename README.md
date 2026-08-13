@@ -41,12 +41,12 @@ Microphone -> Web Speech API -> WebSocket -> FastAPI -> LLM Router -> TTS
 
 ### Security Boundaries
 
-Before accepting `/ws/voice`, the backend requires a loopback `Host` (`localhost`, `127.0.0.1`, or `::1`).
+Before accepting `/ws/voice`, the backend requires a loopback `Host` (`localhost`, `127.0.0.1`, or `::1`) with no explicit port, the Vite development port `5173`, or the configured backend `PORT`.
 A browser `Origin`, when present, must use `http` or `https`, a loopback hostname, and either the Vite development port `5173` or the configured backend `PORT`; malformed, opaque, credential-bearing, foreign, and unrelated-port origins are rejected before the WebSocket handshake is accepted.
 Origin-less clients remain supported only through a valid loopback host.
 
 Risky pending actions execute only after a short affirmative phrase such as `yes`, `okay`, `go ahead`, `응`, or `해줘` matches the complete reply after normalization.
-Explicit negative language cancels first, even if the reply also contains an affirmative word.
+Explicit negative language cancels first, even if the reply also contains an affirmative word, and common Korean endings such as those in `취소해줘`, `하지 마세요`, and `아니에요` remain cancellations without matching unrelated words such as `취소선` or `아니메이션`.
 An ambiguous reply keeps the same unexpired pending action and asks for an explicit yes or no without extending its expiration, and disconnecting the WebSocket removes that connection's pending action.
 While confirmation is pending, an ambiguous reply is not routed as a new command.
 Korean risky click labels require confirmation, while Korean payment and credential terms in Computer Use goals are blocked even when particles or polite suffixes are attached.
