@@ -38,7 +38,7 @@ _AFFIRMATIVE_TOKENS = (
     "좋아",
 )
 
-_NEGATIVE_TOKENS = (
+_NEGATIVE_ENGLISH_TOKENS = (
     "no",
     "nope",
     "cancel",
@@ -49,13 +49,12 @@ _NEGATIVE_TOKENS = (
     "don't",
     "dont",
     "do not",
-    "아니",
-    "아니요",
-    "아니야",
-    "취소",
-    "그만",
-    "하지마",
-    "하지 마",
+)
+
+_NEGATIVE_KOREAN_PATTERNS = (
+    re.compile(r"(?<!\w)아니(?:에요|예요|요|야)?(?!\w)"),
+    re.compile(r"(?<!\w)(?:취소|그만)(?:해주세요|해줘요|해줘|하세요|해요|해)?(?!\w)"),
+    re.compile(r"(?<!\w)하지\s*마(?:세요)?(?!\w)"),
 )
 
 
@@ -83,8 +82,8 @@ def is_negative(text: str) -> bool:
         return False
     return any(
         re.search(rf"(?<!\w){re.escape(token)}(?!\w)", norm)
-        for token in _NEGATIVE_TOKENS
-    )
+        for token in _NEGATIVE_ENGLISH_TOKENS
+    ) or any(pattern.search(norm) for pattern in _NEGATIVE_KOREAN_PATTERNS)
 
 
 _SAFE_KINDS = {

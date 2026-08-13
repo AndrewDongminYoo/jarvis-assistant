@@ -47,6 +47,28 @@ def test_is_negative_korean_tokens():
         assert is_negative(text) is True, text  # nosec B101
 
 
+def test_is_negative_korean_polite_suffixes():
+    for text in (
+        "취소해",
+        "취소해요",
+        "취소해줘",
+        "취소해줘요",
+        "취소해주세요",
+        "취소하세요",
+        "그만해",
+        "그만해요",
+        "그만해줘",
+        "그만해줘요",
+        "그만해주세요",
+        "그만하세요",
+        "하지 마세요",
+        "하지마세요",
+        "아니에요",
+        "아니예요",
+    ):
+        assert is_negative(text) is True, text  # nosec B101
+
+
 def test_is_negative_rejects_others():
     for text in ("", "yes", "sure", "응", "go"):
         assert is_negative(text) is False, text  # nosec B101
@@ -74,7 +96,13 @@ def test_negative_phrases_are_not_affirmative():
 
 
 def test_is_negative_rejects_substring_false_positives():
-    for text in ("I cannot do that", "you know it", "innovation"):
+    for text in (
+        "I cannot do that",
+        "you know it",
+        "innovation",
+        "아니메이션",
+        "취소선",
+    ):
         assert is_negative(text) is False, text  # nosec B101
 
 
