@@ -13,10 +13,19 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import urlsplit
+from uuid import uuid4
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    WebSocketException,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -620,6 +629,58 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+
+def _parse_authority(authority: str) -> tuple[str, int | None] | None:
+    try:
+        parsed = urlsplit(f"//{authority}")
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path
+        or parsed.query
+        or parsed.fragment
+    ):
+        return None
+    return parsed.hostname.casefold(), port
+
+
+def _is_allowed_websocket_request(host: str, origin: str | None) -> bool:
+    host_parts = _parse_authority(host)
+    if host_parts is None:
+        return False
+    host_name, host_port = host_parts
+    if host_name not in _LOOPBACK_HOSTS or host_port not in (None, 5173, PORT):
+        return False
+    if origin is None:
+        return True
+
+    try:
+        parsed = urlsplit(origin)
+        origin_port = parsed.port
+    except ValueError:
+        return False
+    if (
+        parsed.scheme not in {"http", "https"}
+        or parsed.hostname is None
+        or parsed.hostname.casefold() not in _LOOPBACK_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        return False
+    if origin_port is None:
+        origin_port = 443 if parsed.scheme == "https" else 80
+    return origin_port in {5173, PORT}
+
+
 _dist = Path("frontend/dist")
 if _dist.exists():
     app.mount("/app", StaticFiles(directory=str(_dist), html=True), name="static")
@@ -648,6 +709,10 @@ def _format_confirm_prompt(raw: str, action: str) -> str:
 
 def _ws_id(ws: WebSocket) -> str:
     return f"{id(ws):x}"
+
+
+def _new_connection_id() -> str:
+    return uuid4().hex
 
 
 async def _run_action_loop(
@@ -723,12 +788,16 @@ async def _run_action_loop(
     return raw, steps, None
 
 
-async def handle_message(ws: WebSocket, text: str) -> None:
+async def handle_message(
+    ws: WebSocket,
+    text: str,
+    connection_id: str | None = None,
+) -> None:
     await ws.send_json({"type": "thinking"})
 
     import safety  # local import
 
-    wsid = _ws_id(ws)
+    wsid = connection_id if connection_id is not None else _ws_id(ws)
 
     async def send_step(tag: str, result: ActionResult) -> None:
         await ws.send_json(
@@ -792,7 +861,15 @@ async def handle_message(ws: WebSocket, text: str) -> None:
             await _send_audio_chunks(ws, audio)
             await ws.send_json({"type": "done"})
             return
-        # neither yes nor no — drop pending (already popped), fall through to normal handling
+        _pending[wsid] = pending_existing
+        spoken = "Please answer yes or no. / 예 또는 아니요로 답해주세요."
+        _mem.add_exchange("user", text)
+        _mem.add_exchange("assistant", spoken)
+        await ws.send_json({"type": "text", "content": spoken})
+        audio = await synthesize(spoken)
+        await _send_audio_chunks(ws, audio)
+        await ws.send_json({"type": "done"})
+        return
 
     messages = _mem.get_recent()
     messages.append({"role": "user", "content": text})
@@ -811,7 +888,7 @@ async def handle_message(ws: WebSocket, text: str) -> None:
         return
 
     if pending is not None:
-        _pending[_ws_id(ws)] = pending
+        _pending[wsid] = pending
         spoken = _format_confirm_prompt(raw, pending.action)
         _mem.add_exchange("user", text)
         _mem.add_exchange("assistant", spoken)
@@ -904,6 +981,12 @@ def _on_handler_done(task: asyncio.Task) -> None:
 
 @app.websocket("/ws/voice")
 async def ws_voice(ws: WebSocket) -> None:
+    if not _is_allowed_websocket_request(
+        ws.headers.get("host", ""),
+        ws.headers.get("origin"),
+    ):
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION)
+    connection_id = _new_connection_id()
     await ws.accept()
     log.info("Client connected")
     current: Optional[asyncio.Task] = None
@@ -922,7 +1005,9 @@ async def ws_voice(ws: WebSocket) -> None:
                 cancel_current()
                 text = (msg.get("text") or "").strip()
                 if text:
-                    current = asyncio.create_task(handle_message(ws, text))
+                    current = asyncio.create_task(
+                        handle_message(ws, text, connection_id)
+                    )
                     current.add_done_callback(_on_handler_done)
             elif kind == "today-report":
                 cancel_current()
@@ -935,10 +1020,11 @@ async def ws_voice(ws: WebSocket) -> None:
                 await ws.send_json({"type": "pong"})
     except WebSocketDisconnect:
         log.info("Client disconnected")
-        cancel_current()
     except Exception as e:
         log.error("WS error: %s", e)
+    finally:
         cancel_current()
+        _pending.pop(connection_id, None)
 
 
 # ---------------------------------------------------------------------------

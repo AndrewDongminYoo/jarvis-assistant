@@ -28,7 +28,7 @@ def test_is_affirmative_english_tokens():
 
 
 def test_is_affirmative_korean_tokens():
-    for text in ("응", "그래", "해", "해줘", "맞아", "좋아"):
+    for text in ("예", "응", "그래", "해", "해줘", "맞아", "좋아"):
         assert is_affirmative(text) is True, text  # nosec B101
 
 
@@ -43,7 +43,29 @@ def test_is_negative_english_tokens():
 
 
 def test_is_negative_korean_tokens():
-    for text in ("아니", "아니야", "취소", "그만", "하지마"):
+    for text in ("아니", "아니요", "아니야", "취소", "그만", "하지마", "하지 마"):
+        assert is_negative(text) is True, text  # nosec B101
+
+
+def test_is_negative_korean_polite_suffixes():
+    for text in (
+        "취소해",
+        "취소해요",
+        "취소해줘",
+        "취소해줘요",
+        "취소해주세요",
+        "취소하세요",
+        "그만해",
+        "그만해요",
+        "그만해줘",
+        "그만해줘요",
+        "그만해주세요",
+        "그만하세요",
+        "하지 마세요",
+        "하지마세요",
+        "아니에요",
+        "아니예요",
+    ):
         assert is_negative(text) is True, text  # nosec B101
 
 
@@ -57,8 +79,30 @@ def test_is_affirmative_rejects_substring_false_positives():
         assert is_affirmative(text) is False, text  # nosec B101
 
 
+def test_is_affirmative_accepts_surrounding_punctuation_and_whitespace():
+    for text in ("  YES!  ", "(okay)", "응.", "\nGo   ahead?\t"):
+        assert is_affirmative(text) is True, text  # nosec B101
+
+
+def test_is_affirmative_requires_a_complete_phrase():
+    for text in ("I need to go now", "yes, after lunch", "okay maybe later"):
+        assert is_affirmative(text) is False, text  # nosec B101
+
+
+def test_negative_phrases_are_not_affirmative():
+    for text in ("don't do it", "don’t do it", "okay, but don't send it"):
+        assert is_negative(text) is True, text  # nosec B101
+        assert is_affirmative(text) is False, text  # nosec B101
+
+
 def test_is_negative_rejects_substring_false_positives():
-    for text in ("I cannot do that", "you know it", "innovation"):
+    for text in (
+        "I cannot do that",
+        "you know it",
+        "innovation",
+        "아니메이션",
+        "취소선",
+    ):
         assert is_negative(text) is False, text  # nosec B101
 
 
@@ -112,6 +156,23 @@ def test_classify_ui_click_risky_label_promotes_to_confirm():
         assert classify(action) is Decision.CONFIRM, action  # nosec B101
 
 
+def test_classify_ui_click_korean_risky_labels_promote_to_confirm():
+    for label in (
+        "보내기",
+        "삭제",
+        "구매",
+        "확인",
+        "지금 결제",
+        "제출",
+        "제거",
+        "휴지통",
+        "로그아웃",
+        "폐기",
+    ):
+        action = f"UI:CLICK:button::{label}"
+        assert classify(action) is Decision.CONFIRM, action  # nosec B101
+
+
 def test_classify_terminal_default_confirm():
     for cmd in ("ls -la", "git status", "echo hi"):
         assert classify(f"TERMINAL:{cmd}") is Decision.CONFIRM, cmd  # nosec B101
@@ -142,6 +203,11 @@ def test_classify_computer_blocked_for_payments():
         assert classify(action) is Decision.BLOCKED, action  # nosec B101
 
 
+def test_classify_computer_korean_suffixes_remain_blocked():
+    for action in ("COMPUTER:결제해주세요", "COMPUTER:비밀번호를 입력"):
+        assert classify(action) is Decision.BLOCKED, action  # nosec B101
+
+
 def test_classify_empty_or_unknown_blocked():
     assert classify("") is Decision.BLOCKED  # nosec B101
     assert classify("WHO_KNOWS:hi") is Decision.BLOCKED  # nosec B101
@@ -155,6 +221,11 @@ def test_reason_mentions_terminal_pattern():
 def test_reason_mentions_payment_keyword():
     msg = reason("COMPUTER:송금 100만원")
     assert "송금" in msg or "payment" in msg.lower(), msg  # nosec B101
+
+
+def test_reason_mentions_korean_keyword_with_suffix():
+    msg = reason("COMPUTER:비밀번호를 입력")
+    assert msg == "payment or credentials keyword: 비밀번호"  # nosec B101
 
 
 def test_classify_computer_rejects_pay_substring_false_positive():

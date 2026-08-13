@@ -36,6 +36,8 @@ If behavior changes, update `README.md` in the same change. Do not make
 - Do not log user transcripts, prompt bodies, API keys, or full model responses.
 - LLM logs should include task/provider/model, success or failure, latency, and
   response length only.
+- Preserve the `/ws/voice` pre-accept boundary: the request host must be loopback with no explicit port, port `5173`, or the configured backend `PORT`, and a present browser origin must be loopback on port `5173` or the configured backend `PORT`.
+- Keep confirmation replies fail-closed: only complete short affirmative phrases execute, explicit negatives and their supported Korean polite endings cancel first without matching unrelated words, ambiguous replies retain the original pending expiration instead of entering normal turn handling, and disconnect cleanup removes connection-owned pending state.
 
 ## Development Commands
 
@@ -108,6 +110,11 @@ When changing system-prompt action tags in `server.py`, the parser, the dispatch
 ### WebSocket protocol (`server.py` ↔ `frontend/src/ws.ts`, `voice.ts`)
 
 `/ws/voice` is a JSON-message channel. Inbound types: `transcript` (`{text}`), `today-report`, `abort`, `ping`. Outbound types in order per turn: `thinking` → optional `step` progress messages → `text` → `audio` (base64-chunked, 16 KiB) → `done`, or `error`. Audio chunks may be absent if ElevenLabs failed and macOS `say` was used server-side; the frontend must still treat `done` as the cue to resume wake listening.
+
+Before `accept()`, `server.py` raises an ASGI policy-violation close for non-loopback hosts and browser origins outside the approved loopback ports; Uvicorn exposes that pre-accept denial as an HTTP `403` handshake rejection rather than a WebSocket close frame.
+An absent origin is allowed only after the loopback host check passes.
+Each accepted connection receives a generated ID that owns its pending confirmation state, and `ws_voice` removes that state in `finally`.
+When confirmation behavior changes, update `safety.py`, the pending branch in `handle_message`, the related tests, and the README contract together.
 
 ### Frontend state machine (`main.ts` → `wake.ts` → `session.ts`)
 
