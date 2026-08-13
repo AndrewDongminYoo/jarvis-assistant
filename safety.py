@@ -8,6 +8,7 @@ docs/specs/2026-05-11-general-agent-design.md for rationale.
 from __future__ import annotations
 
 import re
+import unicodedata
 from enum import Enum
 
 
@@ -28,6 +29,7 @@ _AFFIRMATIVE_TOKENS = (
     "go ahead",
     "go",
     "do it",
+    "예",
     "응",
     "그래",
     "해",
@@ -44,25 +46,35 @@ _NEGATIVE_TOKENS = (
     "abort",
     "nevermind",
     "never mind",
+    "don't",
+    "dont",
+    "do not",
     "아니",
+    "아니요",
     "아니야",
     "취소",
     "그만",
     "하지마",
+    "하지 마",
 )
 
 
 def _normalize(text: str) -> str:
-    return text.strip().lower()
+    norm = " ".join(text.replace("’", "'").casefold().split())
+    previous = None
+    while norm != previous:
+        previous = norm
+        norm = norm.strip()
+        while norm and unicodedata.category(norm[0]).startswith("P"):
+            norm = norm[1:]
+        while norm and unicodedata.category(norm[-1]).startswith("P"):
+            norm = norm[:-1]
+    return norm.strip()
 
 
 def is_affirmative(text: str) -> bool:
     norm = _normalize(text)
-    if not norm:
-        return False
-    return any(
-        re.search(rf"\b{re.escape(token)}\b", norm) for token in _AFFIRMATIVE_TOKENS
-    )
+    return bool(norm) and norm in _AFFIRMATIVE_TOKENS
 
 
 def is_negative(text: str) -> bool:
@@ -70,7 +82,8 @@ def is_negative(text: str) -> bool:
     if not norm:
         return False
     return any(
-        re.search(rf"\b{re.escape(token)}\b", norm) for token in _NEGATIVE_TOKENS
+        re.search(rf"(?<!\w){re.escape(token)}(?!\w)", norm)
+        for token in _NEGATIVE_TOKENS
     )
 
 
@@ -99,6 +112,17 @@ _RISKY_CLICK_LABELS = (
     "trash",
     "sign out",
     "discard",
+    "보내기",
+    "전송",
+    "삭제",
+    "구매",
+    "확인",
+    "결제",
+    "제출",
+    "제거",
+    "휴지통",
+    "로그아웃",
+    "폐기",
 )
 
 _BLOCKED_TERMINAL_PATTERNS = (
@@ -110,17 +134,31 @@ _BLOCKED_TERMINAL_PATTERNS = (
     re.compile(r">\s*/(etc|System|usr|bin|sbin)/"),
 )
 
-_BLOCKED_COMPUTER_KEYWORDS = (
+_BLOCKED_COMPUTER_ASCII_KEYWORDS = (
     "pay",
     "payment",
     "transfer",
     "bank",
     "password",
+)
+
+_BLOCKED_COMPUTER_KOREAN_KEYWORDS = (
     "송금",
     "결제",
     "이체",
     "비밀번호",
 )
+
+
+def _matching_blocked_computer_keyword(goal: str) -> str | None:
+    low = goal.casefold()
+    for keyword in _BLOCKED_COMPUTER_ASCII_KEYWORDS:
+        if re.search(rf"\b{re.escape(keyword)}\b", low):
+            return keyword
+    for keyword in _BLOCKED_COMPUTER_KOREAN_KEYWORDS:
+        if keyword in low:
+            return keyword
+    return None
 
 
 def _split(action: str) -> tuple[str, str]:
@@ -176,10 +214,7 @@ def classify(action: str) -> Decision:
         return Decision.CONFIRM
 
     if kind == "COMPUTER":
-        goal = payload.lower()
-        if any(
-            re.search(rf"\b{re.escape(k)}\b", goal) for k in _BLOCKED_COMPUTER_KEYWORDS
-        ):
+        if _matching_blocked_computer_keyword(payload) is not None:
             return Decision.BLOCKED
         return Decision.CONFIRM
 
@@ -196,8 +231,7 @@ def reason(action: str) -> str:
             if p.search(payload):
                 return f"dangerous shell pattern: {p.pattern}"
     if kind == "COMPUTER":
-        low = payload.lower()
-        for k in _BLOCKED_COMPUTER_KEYWORDS:
-            if re.search(rf"\b{re.escape(k)}\b", low):
-                return f"payment or credentials keyword: {k}"
+        keyword = _matching_blocked_computer_keyword(payload)
+        if keyword is not None:
+            return f"payment or credentials keyword: {keyword}"
     return f"unrecognized or unsafe action: {action}"

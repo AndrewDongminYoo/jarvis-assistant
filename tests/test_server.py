@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -565,3 +567,101 @@ def test_load_provider_pref_ignores_non_dict_payload(monkeypatch, tmp_path):
     monkeypatch.setattr(server, "PROVIDER_PREF_PATH", non_dict)
     server._load_provider_pref()
     assert router.preferred is None  # nosec B101
+
+
+# ---------------------------------------------------------------------------
+# WebSocket request boundary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("host", "origin", "expected"),
+    [
+        (f"localhost:{server.PORT}", "http://localhost:5173", True),
+        (f"127.0.0.1:{server.PORT}", "http://127.0.0.1:5173", True),
+        (f"[::1]:{server.PORT}", f"https://[::1]:{server.PORT}", True),
+        (f"localhost:{server.PORT}", None, True),
+        (f"localhost:{server.PORT}", "https://evil.example", False),
+        (f"localhost:{server.PORT}", "null", False),
+        (f"192.168.1.50:{server.PORT}", "http://localhost:5173", False),
+        ("localhost:not-a-port", "http://localhost:5173", False),
+        (f"localhost:{server.PORT}", "http://[", False),
+        (f"localhost:{server.PORT}", "http://localhost:9999", False),
+        (f"localhost:{server.PORT}", "http://user@localhost:5173", False),
+    ],
+)
+def test_websocket_request_boundary(host, origin, expected):
+    assert server._is_allowed_websocket_request(host, origin) is expected  # nosec B101
+
+
+def test_websocket_rejects_untrusted_origin():
+    with TestClient(server.app) as client:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            with client.websocket_connect(
+                f"ws://localhost:{server.PORT}/ws/voice",
+                headers={"origin": "https://evil.example"},
+            ):
+                pass
+
+    assert exc_info.value.code == 1008  # nosec B101
+
+
+def test_websocket_accepts_trusted_local_origin():
+    with TestClient(server.app) as client:
+        with client.websocket_connect(
+            f"ws://localhost:{server.PORT}/ws/voice",
+            headers={"origin": "http://localhost:5173"},
+        ) as ws:
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json() == {"type": "pong"}  # nosec B101
+
+
+def test_new_connection_ids_are_unique_uuid_hex_values():
+    first = server._new_connection_id()
+    second = server._new_connection_id()
+
+    assert first != second  # nosec B101
+    assert len(first) == len(second) == 32  # nosec B101
+    assert int(first, 16) >= 0  # nosec B101
+    assert int(second, 16) >= 0  # nosec B101
+
+
+def test_ws_voice_passes_connection_id_to_handle_message(monkeypatch):
+    connection_id = "connection-123"
+    handled = asyncio.Event()
+    seen = {}
+
+    monkeypatch.setattr(
+        server,
+        "_new_connection_id",
+        lambda: connection_id,
+        raising=False,
+    )
+
+    async def fake_handle_message(ws, text, received_connection_id=None):
+        seen["args"] = (ws, text, received_connection_id)
+        handled.set()
+
+    monkeypatch.setattr(server, "handle_message", fake_handle_message)
+
+    class TranscriptWS:
+        def __init__(self):
+            self.headers = {"host": f"localhost:{server.PORT}"}
+            self.accepted = False
+            self.received = 0
+
+        async def accept(self):
+            self.accepted = True
+
+        async def receive_json(self):
+            self.received += 1
+            if self.received == 1:
+                return {"type": "transcript", "text": "hello"}
+            await asyncio.wait_for(handled.wait(), timeout=1.0)
+            raise WebSocketDisconnect(code=1000)
+
+    ws = TranscriptWS()
+    run(server.ws_voice(ws))
+
+    assert ws.accepted is True  # nosec B101
+    assert seen["args"] == (ws, "hello", connection_id)  # nosec B101

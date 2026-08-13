@@ -10,14 +10,13 @@ committed.
 
 ## Local-Only Deployment
 
-JARVIS is designed to run on a single Mac that the user owns. The backend binds
-to `127.0.0.1` by default and trusts every connection it accepts — there is no
-authentication on `/ws/voice` or the `/api/*` endpoints. The action dispatcher
-runs terminal commands, opens browsers, edits notes, and can launch an
-autonomous Claude Code session, all with your user privileges. Do not expose
-the server to other devices, public networks, or the internet. Override the
-bind address with the `HOST` environment variable only after you understand
-these implications.
+JARVIS is designed to run on a single Mac that the user owns.
+The backend binds to `127.0.0.1` by default and has no identity authentication on `/ws/voice` or the `/api/*` endpoints.
+The privileged WebSocket validates local request metadata before accepting a connection.
+The `/api/*` endpoints retain the existing browser CORS policy but have no identity authentication and remain accessible to local non-browser clients.
+The action dispatcher runs terminal commands, opens browsers, edits notes, and can launch an autonomous Claude Code session, all with your user privileges.
+Do not expose the server to other devices, public networks, or the internet.
+Changing `HOST` alone is not a remote-access design; LAN, tunnel, reverse-proxy, or internet use requires separate authentication and origin controls.
 
 ## Architecture
 
@@ -39,6 +38,18 @@ Microphone -> Web Speech API -> WebSocket -> FastAPI -> LLM Router -> TTS
 | macOS integrations | AppleScript, Accessibility, Quartz, Computer Use  |
 
 ## Runtime Contract
+
+### Security Boundaries
+
+Before accepting `/ws/voice`, the backend requires a loopback `Host` (`localhost`, `127.0.0.1`, or `::1`).
+A browser `Origin`, when present, must use `http` or `https`, a loopback hostname, and either the Vite development port `5173` or the configured backend `PORT`; malformed, opaque, credential-bearing, foreign, and unrelated-port origins are rejected before the WebSocket handshake is accepted.
+Origin-less clients remain supported only through a valid loopback host.
+
+Risky pending actions execute only after a short affirmative phrase such as `yes`, `okay`, `go ahead`, `응`, or `해줘` matches the complete reply after normalization.
+Explicit negative language cancels first, even if the reply also contains an affirmative word.
+An ambiguous reply keeps the same unexpired pending action and asks for an explicit yes or no without extending its expiration, and disconnecting the WebSocket removes that connection's pending action.
+While confirmation is pending, an ambiguous reply is not routed as a new command.
+Korean risky click labels require confirmation, while Korean payment and credential terms in Computer Use goals are blocked even when particles or polite suffixes are attached.
 
 ### Voice Activation
 

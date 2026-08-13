@@ -604,6 +604,49 @@ def test_handle_message_pending_no_cancels(monkeypatch):
     assert server._pending == {}  # nosec B101
 
 
+def test_handle_message_ambiguous_confirmation_retains_pending(monkeypatch):
+    import time as _time
+
+    fake_router = FakeRouter(["must not be consumed"])
+    monkeypatch.setattr(server, "_router", fake_router)
+
+    async def must_not_dispatch(*_args, **_kwargs):
+        raise AssertionError("ambiguous confirmation must not dispatch")
+
+    monkeypatch.setattr(server, "_dispatch_action_result", must_not_dispatch)
+
+    async def fake_synth(_):
+        return b""
+
+    monkeypatch.setattr(server, "synthesize", fake_synth)
+
+    class FakeWS:
+        def __init__(self):
+            self.sent = []
+
+        async def send_json(self, msg):
+            self.sent.append(msg)
+
+    ws = FakeWS()
+    pending = server.PendingAction(
+        action="MAIL:SEND:a@b.com::hi",
+        history=[],
+        asked_at=_time.time(),
+    )
+    connection_id = "ambiguous-confirmation"
+    server._pending.clear()
+    server._pending[connection_id] = pending
+
+    run(server.handle_message(ws, "I need to go now", connection_id))
+
+    assert fake_router.calls == []  # nosec B101
+    assert server._pending[connection_id] is pending  # nosec B101
+    assert server._pending[connection_id].asked_at == pending.asked_at  # nosec B101
+    text_msg = next(msg for msg in ws.sent if msg["type"] == "text")
+    assert "yes or no" in text_msg["content"].lower()  # nosec B101
+    assert ws.sent[-1] == {"type": "done"}  # nosec B101
+
+
 def test_handle_message_pending_expired_falls_through(monkeypatch):
     import time as _time
 
