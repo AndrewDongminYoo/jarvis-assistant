@@ -578,6 +578,7 @@ def test_load_provider_pref_ignores_non_dict_payload(monkeypatch, tmp_path):
     ("host", "origin", "expected"),
     [
         (f"localhost:{server.PORT}", "http://localhost:5173", True),
+        ("localhost:5173", "http://localhost:5173", True),
         (f"127.0.0.1:{server.PORT}", "http://127.0.0.1:5173", True),
         (f"[::1]:{server.PORT}", f"https://[::1]:{server.PORT}", True),
         (f"localhost:{server.PORT}", None, True),
@@ -610,6 +611,16 @@ def test_websocket_accepts_trusted_local_origin():
     with TestClient(server.app) as client:
         with client.websocket_connect(
             f"ws://localhost:{server.PORT}/ws/voice",
+            headers={"origin": "http://localhost:5173"},
+        ) as ws:
+            ws.send_json({"type": "ping"})
+            assert ws.receive_json() == {"type": "pong"}  # nosec B101
+
+
+def test_websocket_accepts_trusted_vite_proxy_host():
+    with TestClient(server.app) as client:
+        with client.websocket_connect(
+            "ws://localhost:5173/ws/voice",
             headers={"origin": "http://localhost:5173"},
         ) as ws:
             ws.send_json({"type": "ping"})

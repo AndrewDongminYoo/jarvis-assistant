@@ -655,7 +655,7 @@ def _is_allowed_websocket_request(host: str, origin: str | None) -> bool:
     if host_parts is None:
         return False
     host_name, host_port = host_parts
-    if host_name not in _LOOPBACK_HOSTS or host_port not in (None, PORT):
+    if host_name not in _LOOPBACK_HOSTS or host_port not in (None, 5173, PORT):
         return False
     if origin is None:
         return True
