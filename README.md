@@ -335,6 +335,13 @@ pnpm dev
 
 ## Verification
 
+GitHub Actions runs the backend tests and compile checks, all four existing
+Node test scripts (wake, session, clap, settings), and the frontend build on
+Ubuntu for pull requests and pushes to `main`.
+CI installs from `uv.lock` and `frontend/pnpm-lock.yaml`; it does not publish
+or deploy. PyObjC dependencies are installed only on macOS, and the existing
+`macos` pytest marker keeps live Accessibility tests out of the default suite.
+
 Run backend tests:
 
 ```bash

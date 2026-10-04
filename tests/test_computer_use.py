@@ -1,11 +1,41 @@
 import base64
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import computer_use  # noqa: E402
+
+
+@pytest.fixture
+def quartz_constants(monkeypatch):
+    """Supply constants for tests that already replace all native CGEvent calls."""
+    monkeypatch.setitem(
+        sys.modules,
+        "Quartz",
+        SimpleNamespace(
+            kCGEventLeftMouseDown=1,
+            kCGEventLeftMouseUp=2,
+            kCGEventRightMouseDown=3,
+            kCGEventRightMouseUp=4,
+            kCGEventMouseMoved=5,
+            kCGEventLeftMouseDragged=6,
+            kCGEventOtherMouseDown=25,
+            kCGEventOtherMouseUp=26,
+            kCGHIDEventTap=0,
+            kCGMouseButtonLeft=0,
+            kCGMouseButtonRight=1,
+            kCGMouseButtonCenter=2,
+            kCGEventFlagMaskShift=1 << 17,
+            kCGEventFlagMaskControl=1 << 18,
+            kCGEventFlagMaskAlternate=1 << 19,
+            kCGEventFlagMaskCommand=1 << 20,
+        ),
+    )
 
 
 def test_module_exports_run_computer_goal():
@@ -127,7 +157,7 @@ def test_capture_screenshot_skips_sips_when_image_already_under_cap(
     assert "sips" not in runs  # nosec B101
 
 
-def test_mouse_click_posts_down_then_up_at_scaled_coords(monkeypatch):
+def test_mouse_click_posts_down_then_up_at_scaled_coords(monkeypatch, quartz_constants):
     """Coordinates are in scaled-screenshot space; the helper must
     multiply by scale_factor before posting CGEvents."""
     posted = []
@@ -153,7 +183,7 @@ def test_mouse_click_posts_down_then_up_at_scaled_coords(monkeypatch):
     assert event_type_down != event_type_up  # nosec B101
 
 
-def test_mouse_click_supports_right_and_double(monkeypatch):
+def test_mouse_click_supports_right_and_double(monkeypatch, quartz_constants):
     posted = []
     monkeypatch.setattr(
         computer_use,
@@ -172,7 +202,7 @@ def test_mouse_click_supports_right_and_double(monkeypatch):
     assert len(posted) == 4  # nosec B101
 
 
-def test_mouse_move_posts_single_moved_event(monkeypatch):
+def test_mouse_move_posts_single_moved_event(monkeypatch, quartz_constants):
     posted = []
     monkeypatch.setattr(
         computer_use,
@@ -189,7 +219,7 @@ def test_mouse_move_posts_single_moved_event(monkeypatch):
     assert point == (100.0, 50.0)  # nosec B101
 
 
-def test_mouse_drag_posts_down_move_up(monkeypatch):
+def test_mouse_drag_posts_down_move_up(monkeypatch, quartz_constants):
     posted = []
     monkeypatch.setattr(
         computer_use,
@@ -878,7 +908,7 @@ def test_run_computer_goal_recovers_on_anthropic_exception(monkeypatch):
     assert "error" in result.lower() or "failed" in result.lower()  # nosec B101
 
 
-def test_execute_action_left_mouse_down_posts_single_down(monkeypatch):
+def test_execute_action_left_mouse_down_posts_single_down(monkeypatch, quartz_constants):
     posted = []
     monkeypatch.setattr(
         computer_use,
@@ -899,7 +929,9 @@ def test_execute_action_left_mouse_down_posts_single_down(monkeypatch):
     assert "down" in result["text"].lower()  # nosec B101
 
 
-def test_execute_action_left_mouse_up_uses_distinct_event_type(monkeypatch):
+def test_execute_action_left_mouse_up_uses_distinct_event_type(
+    monkeypatch, quartz_constants
+):
     down_posted = []
     up_posted = []
     monkeypatch.setattr(
@@ -923,7 +955,7 @@ def test_execute_action_left_mouse_up_uses_distinct_event_type(monkeypatch):
     assert down_posted[0][1] != up_posted[0][1]  # nosec B101
 
 
-def test_execute_action_hold_key_modifier(monkeypatch):
+def test_execute_action_hold_key_modifier(monkeypatch, quartz_constants):
     import time
 
     events = []
@@ -949,7 +981,7 @@ def test_execute_action_hold_key_modifier(monkeypatch):
     assert result["type"] == "text"  # nosec B101
 
 
-def test_execute_action_hold_key_named_key(monkeypatch):
+def test_execute_action_hold_key_named_key(monkeypatch, quartz_constants):
     import time
 
     events = []
@@ -1019,7 +1051,7 @@ def test_capture_screenshot_can_target_selected_display(monkeypatch, tmp_path):
     assert scale.origin_y == 100.0  # nosec B101
 
 
-def test_mouse_click_adds_selected_display_origin(monkeypatch):
+def test_mouse_click_adds_selected_display_origin(monkeypatch, quartz_constants):
     class Scale(float):
         def __new__(cls):
             value = float.__new__(cls, 2.0)
