@@ -67,5 +67,13 @@ jobs:
         run: |
           pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir "$RUNNER_TEMP/jarvis-session-tests" src/session.ts test/session.test.ts
           node "$RUNNER_TEMP/jarvis-session-tests/test/session.test.js"
+      - name: Run clap tests
+        run: |
+          pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir "$RUNNER_TEMP/jarvis-clap-tests" src/clap.ts test/clap.test.ts
+          node "$RUNNER_TEMP/jarvis-clap-tests/test/clap.test.js"
+      - name: Run settings tests
+        run: |
+          pnpm exec tsc --ignoreConfig --module NodeNext --moduleResolution NodeNext --target ES2020 --outDir "$RUNNER_TEMP/jarvis-settings-tests" src/settings.ts test/settings.test.ts
+          node "$RUNNER_TEMP/jarvis-settings-tests/test/settings.test.js"
       - name: Build frontend
         run: pnpm build
