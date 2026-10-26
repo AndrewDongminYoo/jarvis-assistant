@@ -18,9 +18,11 @@ runtimes:
 # This is the section where you manage your linters. (https://docs.trunk.io/check/configuration)
 lint:
   disabled:
+    - grype
     - bandit
   enabled:
-    - grype@0.110.0
+    - pinact@4.1.1!:
+        commands: [lint, upgrade]
     - shellcheck@0.11.0
     - shfmt@3.13.1
     - black@26.5.1
