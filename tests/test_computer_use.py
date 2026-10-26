@@ -908,7 +908,9 @@ def test_run_computer_goal_recovers_on_anthropic_exception(monkeypatch):
     assert "error" in result.lower() or "failed" in result.lower()  # nosec B101
 
 
-def test_execute_action_left_mouse_down_posts_single_down(monkeypatch, quartz_constants):
+def test_execute_action_left_mouse_down_posts_single_down(
+    monkeypatch, quartz_constants
+):
     posted = []
     monkeypatch.setattr(
         computer_use,

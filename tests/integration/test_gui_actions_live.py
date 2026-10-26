@@ -17,9 +17,7 @@ pytestmark = pytest.mark.macos
 
 
 def test_accessibility_permission_is_granted():
-    assert (
-        gui_actions.is_accessibility_permitted() is True
-    ), (  # nosec B101
+    assert gui_actions.is_accessibility_permitted() is True, (  # nosec B101
         "Grant Accessibility permission to the test runner before running -m macos"
     )
 
