@@ -2,7 +2,6 @@
 
 Status: Implemented baseline
 Date: 2026-05-12
-Owner: Dongmin
 Parent spec: `docs/specs/2026-05-11-general-agent-design.md`
 
 ## Goal

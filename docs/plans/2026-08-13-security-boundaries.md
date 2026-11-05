@@ -229,7 +229,7 @@ Expected: all safety tests pass.
 **Interfaces:**
 
 - Consumes: the implemented handshake, confirmation, connection, and Korean safety contracts.
-- Produces: synchronized operator and agent guidance.
+- Produces: synchronized user and agent guidance.
 
 - [x] **Step 1: Update the runtime contract**
 
