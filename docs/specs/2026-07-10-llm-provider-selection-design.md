@@ -2,7 +2,6 @@
 
 Status: Implemented
 Date: 2026-07-10
-Owner: Dongmin
 Parent spec: `docs/specs/2026-05-11-general-agent-design.md`
 Related: `llm_router.py`, `docs/specs/2026-04-22-multilingual-llm-router-design.md`
 
